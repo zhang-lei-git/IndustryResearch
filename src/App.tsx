@@ -33,122 +33,25 @@ import {
   YAxis
 } from "recharts";
 import * as XLSX from "xlsx";
-
-type CompanyStatus = "待调研" | "已预约" | "调研中" | "已完成";
-type NeedPriority = "高" | "中" | "低";
-type ResearchCompany = {
-  id: string;
-  workspaceId: string;
-  name: string;
-  region: string;
-  industry: string;
-  companyType: string;
-  chainPosition: string;
-  scale: string;
-  contact: string;
-  status: CompanyStatus;
-  maturity: number;
-  notes: string;
-};
-type ResearchPlan = {
-  id: string;
-  workspaceId: string;
-  companyId: string;
-  date: string;
-  owner: string;
-  objective: string;
-  status: "计划中" | "已完成";
-};
-type ResearchRecord = {
-  id: string;
-  workspaceId: string;
-  companyId: string;
-  date: string;
-  interviewer: string;
-  summary: string;
-  transcript: string;
-  audioName?: string;
-  audioUrl?: string;
-  needs: NeedItem[];
-  conclusion: string;
-};
-type NeedItem = {
-  id: string;
-  category: string;
-  description: string;
-  priority: NeedPriority;
-  capability: string;
-};
-type Capability = {
-  id: string;
-  name: string;
-  keywords: string[];
-  description: string;
-};
-type QuestionTemplate = {
-  id: string;
-  category: string;
-  appliesToTypes: string[];
-  appliesToPositions: string[];
-  question: string;
-};
-type AppState = {
-  dataVersion: number;
-  workspaces: Workspace[];
-  activeWorkspaceId: string;
-  topics: ResearchTopic[];
-  hypotheses: ResearchHypothesis[];
-  companies: ResearchCompany[];
-  plans: ResearchPlan[];
-  records: ResearchRecord[];
-  capabilities: Capability[];
-  questionTemplates: QuestionTemplate[];
-};
-type Workspace = {
-  id: string;
-  name: string;
-  regionName: string;
-  industryFocus: string[];
-  description: string;
-  status: "试点中" | "进行中" | "已归档";
-};
-type ResearchTopic = {
-  id: string;
-  workspaceId: string;
-  name: string;
-  description: string;
-  tags: string[];
-  status: "调研中" | "待验证" | "已形成结论";
-};
-type ResearchHypothesis = {
-  id: string;
-  workspaceId: string;
-  topicId: string;
-  statement: string;
-  evidence: string;
-  status: "待验证" | "已有支持证据" | "存在反例" | "暂不确定";
-};
-type PolicySupport = {
-  id: string;
-  name: string;
-  level: string;
-  amount: string;
-  appliesToTypes: string[];
-  appliesToPositions: string[];
-  serviceMatches: string[];
-  decisionValue: string;
-};
-type TenderSignal = {
-  id: string;
-  title: string;
-  source: string;
-  date: string;
-  status: string;
-  relevance: string;
-};
+import type {
+  AppState,
+  Capability,
+  CompanyStatus,
+  NeedItem,
+  NeedPriority,
+  PolicySupport,
+  QuestionTemplate,
+  ResearchCompany,
+  ResearchHypothesis,
+  ResearchPlan,
+  ResearchRecord,
+  ResearchTopic,
+  TenderSignal,
+  Workspace
+} from "./domain/types";
+import { applyStateVersion, parseStoredState, serializeState, STATE_VERSION } from "./state/persistence";
 
 const STORE_KEY = "manufacturing-research-system:v1";
-const STATE_VERSION = 2;
 const YANLIANG_WORKSPACE_ID = "workspace-yanliang-aerospace";
 const COLORS = ["#2563eb", "#14b8a6", "#f59e0b", "#ef4444", "#7c3aed", "#0f766e"];
 const policySupports = defaultPolicySupports();
@@ -1291,25 +1194,15 @@ function NeedCard({ need, company }: { need: NeedItem; company?: string }) {
 function usePersistentState() {
   const [state, setStateValue] = useState<AppState>(() => {
     const raw = localStorage.getItem(STORE_KEY);
-    if (!raw) {
-      const next = mergeYanliangCompanies(initialState);
-      localStorage.setItem(STORE_KEY, JSON.stringify(next));
-      return next;
-    }
-    try {
-      const parsed = JSON.parse(raw) as AppState;
-      const next = mergeYanliangCompanies(parsed);
-      localStorage.setItem(STORE_KEY, JSON.stringify(next));
-      return next;
-    } catch {
-      const next = mergeYanliangCompanies(initialState);
-      localStorage.setItem(STORE_KEY, JSON.stringify(next));
-      return next;
-    }
+    const stored = parseStoredState(raw);
+    const next = mergeYanliangCompanies(applyStateVersion(stored ?? initialState) as AppState);
+    localStorage.setItem(STORE_KEY, serializeState(next));
+    return next;
   });
   function setState(next: AppState) {
-    setStateValue(next);
-    localStorage.setItem(STORE_KEY, JSON.stringify(next));
+    const versioned = { ...next, dataVersion: STATE_VERSION };
+    setStateValue(versioned);
+    localStorage.setItem(STORE_KEY, serializeState(versioned));
   }
   return [state, setState] as const;
 }
