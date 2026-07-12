@@ -43,6 +43,40 @@ button {
   grid-template-columns: 248px minmax(0, 1fr);
 }
 
+.app-loading {
+  display: grid;
+  place-content: center;
+  gap: 10px;
+  min-height: 100vh;
+  padding: 24px;
+  background: #f5f8fc;
+  color: var(--ink);
+  text-align: center;
+}
+
+.app-loading span {
+  color: var(--muted);
+}
+
+.topbar-context {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.sync-warning {
+  max-width: 280px;
+  border: 1px solid #f5c46b;
+  border-radius: 8px;
+  background: #fff8e8;
+  color: #9a6100;
+  padding: 8px 10px;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 .sidebar {
   position: sticky;
   top: 0;

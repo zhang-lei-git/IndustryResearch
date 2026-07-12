@@ -19,7 +19,7 @@ import {
   Workflow,
   X
 } from "lucide-react";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Bar,
   BarChart,
@@ -52,7 +52,7 @@ import type {
 } from "./domain/types";
 import { intelligenceBelongsToCompany, intelligenceIsRelevant } from "./domain/intelligence";
 import { policyMatchesCompany } from "./domain/policy";
-import { applyStateVersion, parseStoredState, serializeState, STATE_VERSION } from "./state/persistence";
+import { applyStateVersion, parseStoredState, STATE_VERSION } from "./state/persistence";
 
 const STORE_KEY = "manufacturing-research-system:v1";
 const YANLIANG_WORKSPACE_ID = "workspace-yanliang-aerospace";
@@ -161,7 +161,7 @@ const yanliangCompanies: ResearchCompany[] = [
 ];
 
 export function App() {
-  const [state, setState] = usePersistentState();
+  const [state, setState, syncStatus] = useServerState();
   const [active, setActive] = useState("workspace");
   const [selectedCompanyId, setSelectedCompanyId] = useState(state.companies[0]?.id ?? "");
   const [profileCompanyId, setProfileCompanyId] = useState<string | null>(null);
@@ -188,6 +188,10 @@ export function App() {
     });
     setSelectedCompanyId(company.id);
     setProfileCompanyId(company.id);
+  }
+
+  if (syncStatus === "loading") {
+    return <main className="app-loading"><strong>正在连接调研数据服务...</strong><span>首次运行会将本机已有调研数据迁移到服务端数据库。</span></main>;
   }
 
   return (
@@ -232,7 +236,10 @@ export function App() {
             <h1>区域产业调研与机会决策系统</h1>
             <p>从区域认知出发，完成调研、洞察与市场、销售、研发决策闭环。</p>
           </div>
-          {activeWorkspace ? <div className="workspace-context"><MapPinned size={17} /><div><strong>{activeWorkspace.name}</strong><span>{activeWorkspace.regionName} / {activeWorkspace.status}</span></div></div> : null}
+          <div className="topbar-context">
+            {syncStatus === "error" ? <span className="sync-warning">数据服务暂不可用，当前修改尚未保存到服务端。</span> : null}
+            {activeWorkspace ? <div className="workspace-context"><MapPinned size={17} /><div><strong>{activeWorkspace.name}</strong><span>{activeWorkspace.regionName} / {activeWorkspace.status}</span></div></div> : null}
+          </div>
         </header>
 
         {active === "workspace" && activeWorkspace ? <WorkspaceOverview workspace={activeWorkspace} state={state} insights={insights} /> : null}
@@ -1151,6 +1158,7 @@ function Records({ state, setState, selectedCompanyId }: { state: AppState; setS
   const [transcript, setTranscript] = useState("");
   const [conclusion, setConclusion] = useState("");
   const [audio, setAudio] = useState<{ name: string; url: string } | null>(null);
+  const [uploadingAudio, setUploadingAudio] = useState(false);
   const [need, setNeed] = useState<Omit<NeedItem, "id">>({
     category: "生产执行",
     description: "",
@@ -1193,11 +1201,25 @@ function Records({ state, setState, selectedCompanyId }: { state: AppState; setS
     setAudio(null);
   }
 
+  async function uploadAudio(file: File) {
+    setUploadingAudio(true);
+    try {
+      const data = new FormData();
+      data.append("file", file);
+      const response = await fetch("/api/files", { method: "POST", body: data });
+      if (!response.ok) throw new Error("upload failed");
+      const uploaded = await response.json() as { name: string; url: string };
+      setAudio(uploaded);
+    } finally {
+      setUploadingAudio(false);
+    }
+  }
+
   return (
     <div className="grid two">
-      <Panel title="记录调研过程" action={<label className="file-button"><Upload size={16} /> 上传录音<input type="file" accept="audio/*" onChange={(event) => {
+      <Panel title="记录调研过程" action={<label className="file-button"><Upload size={16} /> {uploadingAudio ? "上传中..." : "上传录音"}<input type="file" accept="audio/*" disabled={uploadingAudio} onChange={(event) => {
         const file = event.target.files?.[0];
-        if (file) setAudio({ name: file.name, url: URL.createObjectURL(file) });
+        if (file) void uploadAudio(file);
       }} /></label>}>
         <div className="form-grid">
           <label>调研企业<select value={companyId} onChange={(event) => setCompanyId(event.target.value)}>{state.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></label>
@@ -1331,20 +1353,55 @@ function NeedCard({ need, company }: { need: NeedItem; company?: string }) {
   return <div className="need-card"><div><strong>{need.category}</strong>{company ? <span>{company}</span> : null}</div><p>{need.description}</p><footer><em>{need.priority}</em><span>{need.capability}</span><span>{need.status}</span></footer></div>;
 }
 
-function usePersistentState() {
+function useServerState() {
   const [state, setStateValue] = useState<AppState>(() => {
     const raw = localStorage.getItem(STORE_KEY);
     const stored = parseStoredState(raw);
-    const next = mergeYanliangCompanies(applyStateVersion(stored ?? initialState) as AppState);
-    localStorage.setItem(STORE_KEY, serializeState(next));
-    return next;
+    return mergeYanliangCompanies(applyStateVersion(stored ?? initialState) as AppState);
   });
+  const [syncStatus, setSyncStatus] = useState<"loading" | "ready" | "error">("loading");
+
+  useEffect(() => {
+    let active = true;
+    async function load() {
+      try {
+        const response = await fetch("/api/state");
+        if (!response.ok) throw new Error("state load failed");
+        const payload = await response.json() as { state: AppState | null };
+        const stored = payload.state ?? parseStoredState(localStorage.getItem(STORE_KEY));
+        const next = mergeYanliangCompanies(applyStateVersion(stored ?? initialState) as AppState);
+        if (!payload.state) {
+          const saveResponse = await fetch("/api/state", {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ state: next })
+          });
+          if (!saveResponse.ok) throw new Error("initial state save failed");
+        }
+        if (active) {
+          setStateValue(next);
+          setSyncStatus("ready");
+        }
+      } catch {
+        if (active) setSyncStatus("error");
+      }
+    }
+    void load();
+    return () => { active = false; };
+  }, []);
+
   function setState(next: AppState) {
     const versioned = { ...next, dataVersion: STATE_VERSION };
     setStateValue(versioned);
-    localStorage.setItem(STORE_KEY, serializeState(versioned));
+    void fetch("/api/state", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ state: versioned })
+    }).then((response) => {
+      setSyncStatus(response.ok ? "ready" : "error");
+    }).catch(() => setSyncStatus("error"));
   }
-  return [state, setState] as const;
+  return [state, setState, syncStatus] as const;
 }
 
 function mergeYanliangCompanies(state: AppState): AppState {
