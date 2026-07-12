@@ -95,6 +95,8 @@ type QuestionTemplate = {
 type AppState = {
   workspaces: Workspace[];
   activeWorkspaceId: string;
+  topics: ResearchTopic[];
+  hypotheses: ResearchHypothesis[];
   companies: ResearchCompany[];
   plans: ResearchPlan[];
   records: ResearchRecord[];
@@ -108,6 +110,22 @@ type Workspace = {
   industryFocus: string[];
   description: string;
   status: "试点中" | "进行中" | "已归档";
+};
+type ResearchTopic = {
+  id: string;
+  workspaceId: string;
+  name: string;
+  description: string;
+  tags: string[];
+  status: "调研中" | "待验证" | "已形成结论";
+};
+type ResearchHypothesis = {
+  id: string;
+  workspaceId: string;
+  topicId: string;
+  statement: string;
+  evidence: string;
+  status: "待验证" | "已有支持证据" | "存在反例" | "暂不确定";
 };
 type PolicySupport = {
   id: string;
@@ -146,6 +164,8 @@ const defaultWorkspaces: Workspace[] = [
 const initialState: AppState = {
   workspaces: defaultWorkspaces,
   activeWorkspaceId: YANLIANG_WORKSPACE_ID,
+  topics: [],
+  hypotheses: [],
   companies: [],
   plans: [],
   records: [],
@@ -284,6 +304,7 @@ export function App() {
         <nav>
           <NavItem icon={<MapPinned size={18} />} label="区域概览" active={active === "workspace"} onClick={() => setActive("workspace")} />
           <NavItem icon={<BarChart3 size={18} />} label="数据看板" active={active === "dashboard"} onClick={() => setActive("dashboard")} />
+          <NavItem icon={<Target size={18} />} label="产业研究" active={active === "research"} onClick={() => setActive("research")} />
           <NavItem icon={<Building2 size={18} />} label="企业名单" active={active === "companies"} onClick={() => setActive("companies")} />
           <NavItem icon={<Workflow size={18} />} label="产业链地图" active={active === "chain"} onClick={() => setActive("chain")} />
           <NavItem icon={<ClipboardList size={18} />} label="问题生成" active={active === "questions"} onClick={() => setActive("questions")} />
@@ -306,6 +327,7 @@ export function App() {
 
         {active === "workspace" && activeWorkspace ? <WorkspaceOverview workspace={activeWorkspace} state={state} insights={insights} /> : null}
         {active === "dashboard" ? <Dashboard state={state} insights={insights} /> : null}
+        {active === "research" && activeWorkspace ? <IndustryResearch state={state} setState={updateState} workspace={activeWorkspace} /> : null}
         {active === "companies" ? <Companies state={state} setState={updateState} selectedCompanyId={selectedCompanyId} setSelectedCompanyId={setSelectedCompanyId} openCompanyProfile={openCompanyProfile} /> : null}
         {active === "chain" ? <IndustryChainMap state={state} openCompanyProfile={openCompanyProfile} /> : null}
         {active === "questions" ? <QuestionGenerator state={state} setState={updateState} selectedCompanyId={selectedCompanyId} setSelectedCompanyId={setSelectedCompanyId} /> : null}
@@ -370,6 +392,90 @@ function WorkspaceOverview({ workspace, state, insights }: { workspace: Workspac
             <div><strong>平台知识共享</strong><span>能力库、案例库、调研问题模板和行业模型将逐步升级为可跨区域复用的资产。</span></div>
             <div><strong>横向比较</strong><span>未来可比较不同区域同类企业的需求热度、政策环境和市场进入路径。</span></div>
           </div>
+        </Panel>
+      </section>
+    </div>
+  );
+}
+
+function IndustryResearch({ state, setState, workspace }: { state: AppState; setState: (state: AppState) => void; workspace: Workspace }) {
+  const topics = state.topics.filter((topic) => topic.workspaceId === workspace.id);
+  const [selectedTopicId, setSelectedTopicId] = useState(topics[0]?.id ?? "");
+  const [topicDraft, setTopicDraft] = useState({ name: "", description: "", tags: "" });
+  const [hypothesisDraft, setHypothesisDraft] = useState({ statement: "", evidence: "" });
+  const selectedTopic = topics.find((topic) => topic.id === selectedTopicId) ?? topics[0];
+  const hypotheses = state.hypotheses.filter((hypothesis) => hypothesis.workspaceId === workspace.id && hypothesis.topicId === selectedTopic?.id);
+
+  function addTopic() {
+    if (!topicDraft.name.trim()) return;
+    const topic: ResearchTopic = {
+      id: uid(),
+      workspaceId: workspace.id,
+      name: topicDraft.name.trim(),
+      description: topicDraft.description.trim() || "待补充研究范围与调研目的。",
+      tags: splitTags(topicDraft.tags),
+      status: "待验证"
+    };
+    setState({ ...state, topics: [...state.topics, topic] });
+    setSelectedTopicId(topic.id);
+    setTopicDraft({ name: "", description: "", tags: "" });
+  }
+
+  function addHypothesis() {
+    if (!selectedTopic || !hypothesisDraft.statement.trim()) return;
+    const hypothesis: ResearchHypothesis = {
+      id: uid(),
+      workspaceId: workspace.id,
+      topicId: selectedTopic.id,
+      statement: hypothesisDraft.statement.trim(),
+      evidence: hypothesisDraft.evidence.trim() || "尚无证据，需通过企业访谈、公开情报或政策材料验证。",
+      status: "待验证"
+    };
+    setState({ ...state, hypotheses: [...state.hypotheses, hypothesis] });
+    setHypothesisDraft({ statement: "", evidence: "" });
+  }
+
+  return (
+    <div className="page-grid">
+      <section className="research-banner">
+        <div><span>产业研究工作台</span><h2>先形成假设，再用企业调研和外部信息验证</h2><p>专题组织跨企业研究，假设明确本轮调研要验证什么；需求、录音、政策和招投标等后续都将作为证据回写。</p></div>
+      </section>
+      <section className="grid two">
+        <Panel title="产业研究专题">
+          <div className="topic-list">
+            {topics.map((topic) => (
+              <button className={`topic-card ${topic.id === selectedTopic?.id ? "active" : ""}`} type="button" key={topic.id} onClick={() => setSelectedTopicId(topic.id)}>
+                <div><strong>{topic.name}</strong><em>{topic.status}</em></div>
+                <p>{topic.description}</p>
+                <span>{topic.tags.join(" / ") || "未标注标签"}</span>
+              </button>
+            ))}
+          </div>
+          <div className="topic-form">
+            <Field label="新专题名称" value={topicDraft.name} onChange={(name) => setTopicDraft({ ...topicDraft, name })} />
+            <Field label="标签" value={topicDraft.tags} onChange={(tags) => setTopicDraft({ ...topicDraft, tags })} />
+            <label>研究范围<textarea value={topicDraft.description} onChange={(event) => setTopicDraft({ ...topicDraft, description: event.target.value })} /></label>
+            <button className="button secondary" type="button" onClick={addTopic}><Plus size={16} /> 新建专题</button>
+          </div>
+        </Panel>
+        <Panel title={selectedTopic ? `${selectedTopic.name}：调研假设` : "调研假设"}>
+          {selectedTopic ? (
+            <>
+              <div className="hypothesis-list">
+                {hypotheses.map((hypothesis) => (
+                  <div className="hypothesis-card" key={hypothesis.id}>
+                    <div><strong>{hypothesis.statement}</strong><em className={hypothesis.status}>{hypothesis.status}</em></div>
+                    <p>{hypothesis.evidence}</p>
+                  </div>
+                ))}
+              </div>
+              <div className="topic-form">
+                <label>待验证判断<textarea value={hypothesisDraft.statement} onChange={(event) => setHypothesisDraft({ ...hypothesisDraft, statement: event.target.value })} placeholder="例如：关键零部件企业的共性矛盾主要在质量证据链与交付协同，而非单纯设备自动化。" /></label>
+                <label>已有线索或验证方式<textarea value={hypothesisDraft.evidence} onChange={(event) => setHypothesisDraft({ ...hypothesisDraft, evidence: event.target.value })} placeholder="记录公开资料、政策方向、已知访谈线索，或写明下一步要访谈哪些企业验证。" /></label>
+                <button className="button" type="button" onClick={addHypothesis}><Target size={16} /> 加入待验证假设</button>
+              </div>
+            </>
+          ) : <div className="empty-stage">请先创建产业研究专题。</div>}
         </Panel>
       </section>
     </div>
@@ -1177,6 +1283,8 @@ function mergeYanliangCompanies(state: AppState): AppState {
   const activeWorkspaceId = workspaces.some((workspace) => workspace.id === state.activeWorkspaceId)
     ? state.activeWorkspaceId
     : workspaces[0]?.id ?? YANLIANG_WORKSPACE_ID;
+  const topics = state.topics?.length ? state.topics : defaultYanliangTopics();
+  const hypotheses = state.hypotheses?.length ? state.hypotheses : defaultYanliangHypotheses();
   const questionTemplates = state.questionTemplates?.length ? state.questionTemplates : defaultQuestionTemplates();
   const reportCompanyMap = new Map(yanliangCompanies.map((company) => [canonicalCompanyName(company.name), company]));
   const normalizedCompanies = (state.companies ?? [])
@@ -1209,12 +1317,14 @@ function mergeYanliangCompanies(state: AppState): AppState {
     .map((record) => ({ ...record, workspaceId: record.workspaceId ?? workspaceByCompanyId.get(record.companyId) ?? YANLIANG_WORKSPACE_ID }));
   const sampleCompany = companies.find((company) => company.name === "西安泽达航空制造有限责任公司") ?? companies.find((company) => company.region.includes("阎良"));
   if (!sampleCompany || records.some((record) => record.id === "yanliang-sample-record")) {
-    return { ...state, workspaces, activeWorkspaceId, companies, plans, records, questionTemplates };
+    return { ...state, workspaces, activeWorkspaceId, topics, hypotheses, companies, plans, records, questionTemplates };
   }
   return {
     ...state,
     workspaces,
     activeWorkspaceId,
+    topics,
+    hypotheses,
     questionTemplates,
     companies: companies.map((company) => company.id === sampleCompany.id ? { ...company, status: "调研中" } : company),
     plans: [
@@ -1266,6 +1376,64 @@ function mergeYanliangCompanies(state: AppState): AppState {
       }
     ]
   };
+}
+
+function defaultYanliangTopics(): ResearchTopic[] {
+  return [
+    {
+      id: "topic-chain-collaboration",
+      workspaceId: YANLIANG_WORKSPACE_ID,
+      name: "航空链主与配套协同",
+      description: "围绕一飞院、西飞、试飞院、强度所与本地制造配套企业，研究设计、制造、验证与交付协同中的共性问题。",
+      tags: ["链主协同", "供应链", "质量与交付"],
+      status: "调研中"
+    },
+    {
+      id: "topic-quality-evidence",
+      workspaceId: YANLIANG_WORKSPACE_ID,
+      name: "质量证据链与试验数据",
+      description: "研究材料、零部件、强度试验和试飞适航环节中，质量、检验、试验和符合性证据的管理诉求。",
+      tags: ["质量追溯", "试验验证", "数据治理"],
+      status: "待验证"
+    },
+    {
+      id: "topic-policy-leverage",
+      workspaceId: YANLIANG_WORKSPACE_ID,
+      name: "政策引导与数字化投入",
+      description: "研究技改、智能制造、专精特新、大飞机产业和研发支持政策如何影响企业数字化立项与投入节奏。",
+      tags: ["政策杠杆", "技改", "项目包装"],
+      status: "待验证"
+    }
+  ];
+}
+
+function defaultYanliangHypotheses(): ResearchHypothesis[] {
+  return [
+    {
+      id: "hypothesis-chain-collaboration",
+      workspaceId: YANLIANG_WORKSPACE_ID,
+      topicId: "topic-chain-collaboration",
+      statement: "链主企业对计划、质量、交付和供应商数据口径的要求，会向本地配套企业传导并形成区域级协同需求。",
+      evidence: "已知阎良存在西飞等整机链主及大量航空制造配套企业；需通过链主、一级配套和中小制造企业访谈验证传导机制与实际痛点。",
+      status: "待验证"
+    },
+    {
+      id: "hypothesis-quality-evidence",
+      workspaceId: YANLIANG_WORKSPACE_ID,
+      topicId: "topic-quality-evidence",
+      statement: "航空制造企业的数字化诉求不应只归结为 MES，质量证据链、检验/试验数据、工艺参数和问题闭环可能是更具共性的切入口。",
+      evidence: "强度所、试飞院、材料工艺和零部件企业在产业中占有关键位置；当前为基于产业结构的推断，尚需调研证据支持。",
+      status: "已有支持证据"
+    },
+    {
+      id: "hypothesis-policy-leverage",
+      workspaceId: YANLIANG_WORKSPACE_ID,
+      topicId: "topic-policy-leverage",
+      statement: "将数字化项目与技改、示范试点、研发投入或产业链协同政策结合，可降低中小配套企业的立项与资金门槛。",
+      evidence: "系统已归集多类政策匹配规则；需在企业访谈中确认实际申报能力、窗口期和客户内部决策路径。",
+      status: "待验证"
+    }
+  ];
 }
 
 function isYanliangCompany(company: ResearchCompany) {

@@ -276,6 +276,115 @@ h2 {
   margin-top: 4px;
 }
 
+.research-banner {
+  border: 1px solid #cddcf7;
+  border-radius: 14px;
+  background: linear-gradient(135deg, #f7faff, #f4fbfa);
+  box-shadow: var(--shadow);
+  padding: 22px;
+}
+
+.research-banner > div > span {
+  color: var(--brand-dark);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.research-banner h2 {
+  font-size: 22px;
+  margin: 8px 0;
+}
+
+.research-banner p {
+  color: #516176;
+  line-height: 1.7;
+  margin-bottom: 0;
+}
+
+.topic-list,
+.hypothesis-list,
+.topic-form {
+  display: grid;
+  gap: 10px;
+}
+
+.topic-list {
+  margin-bottom: 14px;
+}
+
+.topic-card,
+.hypothesis-card {
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fbfdff;
+  padding: 12px;
+  text-align: left;
+}
+
+.topic-card:hover,
+.topic-card.active {
+  border-color: #9db8f7;
+  background: #f3f7ff;
+}
+
+.topic-card > div,
+.hypothesis-card > div {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.topic-card strong,
+.hypothesis-card strong {
+  line-height: 1.45;
+}
+
+.topic-card em,
+.hypothesis-card em {
+  flex: 0 0 auto;
+  border-radius: 999px;
+  background: #eaf1ff;
+  color: var(--brand-dark);
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 800;
+  padding: 4px 8px;
+}
+
+.hypothesis-card em.已有支持证据 {
+  background: #e8f7f1;
+  color: #0f766e;
+}
+
+.hypothesis-card em.存在反例 {
+  background: #fff5e5;
+  color: #b45309;
+}
+
+.hypothesis-card em.暂不确定 {
+  background: #f1f5f9;
+  color: #64748b;
+}
+
+.topic-card p,
+.hypothesis-card p {
+  color: #516176;
+  font-size: 13px;
+  line-height: 1.6;
+  margin: 8px 0;
+}
+
+.topic-card > span {
+  color: #7890ad;
+  font-size: 12px;
+}
+
+.topic-form {
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
+}
+
 .top-actions {
   min-width: min(360px, 100%);
 }
