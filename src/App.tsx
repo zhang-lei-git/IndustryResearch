@@ -1,0 +1,1526 @@
+import {
+  BarChart3,
+  Building2,
+  CalendarDays,
+  CheckCircle2,
+  ClipboardList,
+  FileAudio,
+  FileSpreadsheet,
+  Lightbulb,
+  Mic2,
+  Plus,
+  Scale,
+  Search,
+  Settings2,
+  Sparkles,
+  Target,
+  Upload,
+  Workflow,
+  X
+} from "lucide-react";
+import { useMemo, useState } from "react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  Pie,
+  PieChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis
+} from "recharts";
+import * as XLSX from "xlsx";
+
+type CompanyStatus = "待调研" | "已预约" | "调研中" | "已完成";
+type NeedPriority = "高" | "中" | "低";
+type ResearchCompany = {
+  id: string;
+  name: string;
+  region: string;
+  industry: string;
+  companyType: string;
+  chainPosition: string;
+  scale: string;
+  contact: string;
+  status: CompanyStatus;
+  maturity: number;
+  notes: string;
+};
+type ResearchPlan = {
+  id: string;
+  companyId: string;
+  date: string;
+  owner: string;
+  objective: string;
+  status: "计划中" | "已完成";
+};
+type ResearchRecord = {
+  id: string;
+  companyId: string;
+  date: string;
+  interviewer: string;
+  summary: string;
+  transcript: string;
+  audioName?: string;
+  audioUrl?: string;
+  needs: NeedItem[];
+  conclusion: string;
+};
+type NeedItem = {
+  id: string;
+  category: string;
+  description: string;
+  priority: NeedPriority;
+  capability: string;
+};
+type Capability = {
+  id: string;
+  name: string;
+  keywords: string[];
+  description: string;
+};
+type QuestionTemplate = {
+  id: string;
+  category: string;
+  appliesToTypes: string[];
+  appliesToPositions: string[];
+  question: string;
+};
+type AppState = {
+  companies: ResearchCompany[];
+  plans: ResearchPlan[];
+  records: ResearchRecord[];
+  capabilities: Capability[];
+  questionTemplates: QuestionTemplate[];
+};
+type PolicySupport = {
+  id: string;
+  name: string;
+  level: string;
+  amount: string;
+  appliesToTypes: string[];
+  appliesToPositions: string[];
+  serviceMatches: string[];
+  decisionValue: string;
+};
+type TenderSignal = {
+  id: string;
+  title: string;
+  source: string;
+  date: string;
+  status: string;
+  relevance: string;
+};
+
+const STORE_KEY = "manufacturing-research-system:v1";
+const COLORS = ["#2563eb", "#14b8a6", "#f59e0b", "#ef4444", "#7c3aed", "#0f766e"];
+const policySupports = defaultPolicySupports();
+
+const initialState: AppState = {
+  companies: [],
+  plans: [],
+  records: [],
+  questionTemplates: defaultQuestionTemplates(),
+  capabilities: [
+    {
+      id: uid(),
+      name: "数字化诊断与蓝图规划",
+      keywords: ["规划", "诊断", "路线图", "顶层设计", "蓝图"],
+      description: "面向区域制造企业完成现状评估、差距分析、实施路线图与项目包设计。"
+    },
+    {
+      id: uid(),
+      name: "MES/MOM实施落地",
+      keywords: ["MES", "生产", "派工", "报工", "工序", "车间"],
+      description: "覆盖生产计划、工序执行、质量过程、设备采集和现场协同。"
+    },
+    {
+      id: uid(),
+      name: "质量追溯与数据治理",
+      keywords: ["质量", "追溯", "批次", "检验", "数据治理"],
+      description: "建立质量数据链路、批次追溯模型和指标治理机制。"
+    },
+    {
+      id: uid(),
+      name: "设备联网与工业数据采集",
+      keywords: ["设备", "采集", "联网", "OEE", "PLC", "数据"],
+      description: "对接设备、产线、传感器和工业协议，沉淀实时生产数据。"
+    }
+  ]
+};
+
+const yanliangCompanies: ResearchCompany[] = [
+  yanliangCompany("航空工业第一飞机设计研究院（一飞院/603所）", "飞机总体设计/系统集成", "国家级科研设计单位", "研发设计/总体设计", "科研院所", 86, "公开资料显示，一飞院定址西安市阎良区，是集多类军民用飞机设计研究于一体的国家级大中型飞机设计研究院，承担总体设计、系统集成和主要性能/分系统验证性试验。"),
+  yanliangCompany("中国飞行试验研究院（航空工业试飞中心/630所）", "飞行试验/适航鉴定", "国家级试飞鉴定机构", "试飞鉴定/适航验证", "科研院所", 84, "公开资料显示，试飞院位于西安市阎良区，创建于1959年，是我国航空产品国家级鉴定试飞机构，承担军民用飞机、航空发动机、机载设备等试飞鉴定。"),
+  yanliangCompany("中国飞机强度研究所（强度所/623所）", "飞机强度研究与验证", "国家级强度验证机构", "试验验证/强度验证", "科研院所", 82, "公开资料显示，强度所在阎良国家航空产业基地设有军机科研/试验基地，是我国飞机结构强度研究、验证与鉴定的重要中心，承担静力、疲劳、环境适应性等试验验证。"),
+  yanliangCompany("西安航空学院（阎良校区）", "航空人才培养/产教融合", "教学培训机构", "教学培训/人才供给", "高校院校", 62, "阎良区作为中国航空城的重要组成部分，教学培训是产业生态的一环；西安航空学院在阎良设有校区，与航空制造、维修、测试和人才培养紧密相关。"),
+  yanliangCompany("长安先导航空宇航智能制造实验室", "航空宇航智能制造研发", "创新平台", "创新平台/智能制造实验室", "创新平台", 66, "报告提到长安先导航空宇航智能制造实验室入驻西工大多个团队，是区域航空智能制造创新平台。"),
+  yanliangCompany("航空大数据中心", "航空数据服务/设备共享", "产业平台", "产业服务/数据平台", "产业平台", 64, "报告提到航空大数据中心设备共享率达80%，助企融资10亿元以上，是区域航空产业服务和数据平台节点。"),
+  yanliangCompany("秦创原航空产业创新聚集区", "航空创新孵化/成果转化", "创新平台", "创新孵化/成果转化", "创新平台", 63, "报告提到秦创原航空产业创新聚集区于2024年获评，是阎良航空产业创新孵化和成果转化平台。"),
+  yanliangCompany("中航西安飞机工业集团股份有限公司（中航西飞）", "航空整机制造", "链主企业", "整机总装/系统集成", "大型企业", 82, "报告将其定位为国内大型航空制造企业、大飞机总装集成商、C919链主企业，带动40余家本地供应商参与研制。"),
+  yanliangCompany("西安飞机工业（集团）有限责任公司", "航空整机制造", "链主企业", "整机总装/系统集成", "大型企业", 78, "公开公告披露住所地为西安市阎良区西飞大道一号，创建于1958年，属航空工业核心制造主体。"),
+  yanliangCompany("西飞民机有限公司", "民用飞机制造", "链主/核心企业", "整机总装/系统集成", "大型企业", 74, "民航西北局曾在阎良区航空制造产业基地重点调研西飞民机有限公司等单位。"),
+  yanliangCompany("西安三角防务股份有限公司", "航空锻造/航空材料", "链主企业", "关键材料/大型锻件", "上市企业", 72, "报告将其定位为航空大型锻件制造企业，拥有12.5万吨多向模锻液压机，打造航空锻压聚集区。"),
+  yanliangCompany("西安兴航航空科技股份有限公司", "航空结构件/智能装备", "链主企业", "结构件/智能工艺装备", "拟上市企业", 70, "报告称其为国产大飞机金属结构件主要供应商，研发五轴加工、自动钻铆等航空高端智能装备。"),
+  yanliangCompany("西安钢研功能材料股份有限公司", "空天精密合金材料", "链主企业", "关键材料/精密合金", "拟上市企业", 68, "报告将其定位为空天用精密合金板材企业、航空新材料领域链主企业。"),
+  yanliangCompany("西安鑫垚陶瓷基复合材料有限公司", "陶瓷基复合材料", "链主企业", "关键材料/复合材料", "重点企业", 68, "报告称其为全市重点产业链首批链主企业，陶瓷基复合材料制造园加快建设。"),
+  yanliangCompany("西安百跃羊乳集团有限公司", "羊乳食品加工", "链主企业", "特色食品全产业链", "链主企业", 60, "报告称其集奶羊养殖、研发、生产于一体，是羊乳全产业链链主企业。"),
+  yanliangCompany("西安驰达航空科技有限公司", "航空航天零部件", "重点企业", "零部件/大部件制造", "成长型企业", 58, "报告称其由零部件制造向整机/大部件升级，入围西安市低空经济重点企业。"),
+  yanliangCompany("西安泽达航空制造有限责任公司", "航空装备/零件制造", "重点项目", "零部件/装备制造", "规模以上企业", 58, "报告称其为航空装备制造企业，2024年过亿元工业项目建成投产；公开报道提到年产飞机零件能力。"),
+  yanliangCompany("西安博赛旋压科技有限公司", "航空金属旋压成形", "支柱企业", "关键工艺/成形制造", "支柱企业", 56, "报告称其为航空金属旋压成形技术行业支柱企业，获重点稳产扩产支持。"),
+  yanliangCompany("西安嘉业航空科技有限公司", "航空零部件制造与配套", "支柱企业", "零部件/配套制造", "支柱企业", 55, "报告称其为航空零部件制造与配套企业，获重点稳产扩产支持。"),
+  yanliangCompany("西安长之琳航空制造有限公司", "航空精密零部件", "入区企业", "零部件/精密加工", "入区企业", 48, "报告列为航空制造核心企业中的入区企业。"),
+  yanliangCompany("安宇迪（西安）飞机工业有限公司", "飞机零部件制造", "入区企业", "零部件/精密加工", "入区企业", 50, "报告称其为2026年重点推进数字化转型企业。"),
+  yanliangCompany("西安富瑞达科技发展有限公司", "航空科技制造", "入区企业", "航空科技/三首产品", "入区企业", 48, "报告称其为2026年重点支持打造三首产品企业。"),
+  yanliangCompany("西安势加动力科技有限公司", "航空动力技术", "入区企业", "动力系统/动力部件", "入区企业", 49, "报告列为航空动力技术研发与制造企业。"),
+  yanliangCompany("西安万钧航空动力科技有限公司", "航空动力制造", "入区企业", "动力系统/动力部件", "入区企业", 48, "报告列为航空动力相关制造企业。"),
+  yanliangCompany("西安昌隆航空科技有限公司", "航空零部件加工", "入区企业", "零部件/精密加工", "入区企业", 46, "报告列为航空零部件加工与制造企业。"),
+  yanliangCompany("西安嘉锐航空零部件加工有限责任公司", "航空零部件精密加工", "入区企业", "零部件/精密加工", "科技型中小企业", 46, "报告及科技型中小企业名单均涉及该企业。"),
+  yanliangCompany("西安宏图航空制造有限责任公司", "航空结构件制造", "入区企业", "结构件/部段制造", "入区企业", 47, "报告列为航空结构件制造企业。"),
+  yanliangCompany("西安奥若特材料技术有限公司", "航空管路/隔热降噪", "重点企业", "功能部件/材料应用", "成长型企业", 55, "公开报道提到其研发、生产、装配、试验飞机高低压管路、隔热降噪产品。"),
+  yanliangCompany("陕西瑞格机械制造有限公司", "机械制造/航空配套", "配套企业", "零部件/配套制造", "成长型企业", 48, "陕西理工大学机械工程学院阎良访企拓岗公开信息提及走访该企业。"),
+  yanliangCompany("西安市阎良区华航机械制造有限公司", "机械制造", "科技型中小企业", "零部件/配套制造", "科技型中小企业", 45, "陕西省科技型中小企业拟入库名单列明该企业位于西安市阎良区。"),
+  yanliangCompany("西安顺风航空部附件制造有限公司", "航空部附件制造", "科技型中小企业", "功能部件/部附件", "科技型中小企业", 49, "陕西省科技型中小企业拟入库名单列明该企业位于西安市阎良区。"),
+  yanliangCompany("西安市航空基地中汇航空科技有限公司", "航空科技/航空配套", "科技型中小企业", "零部件/配套制造", "科技型中小企业", 47, "陕西省科技型中小企业拟入库名单列明该企业位于西安市阎良区。"),
+  yanliangCompany("陕西晟景精密机械制造有限公司", "精密机械制造", "科技型中小企业", "零部件/精密加工", "科技型中小企业", 44, "陕西省科技型中小企业拟入库名单列明该企业位于西安市阎良区。"),
+  yanliangCompany("陕西华晨航空科技有限公司", "航空科技/航空配套", "科技型中小企业", "零部件/配套制造", "科技型中小企业", 43, "陕西省科技型中小企业拟入库名单列明该企业位于西安市阎良区。"),
+  yanliangCompany("西安坤园航空科技有限公司", "航空科技/航空配套", "科技型中小企业", "零部件/配套制造", "科技型中小企业", 42, "陕西省科技型中小企业拟入库名单列明该企业位于西安市阎良区。"),
+  yanliangCompany("陕西浩瑞诺机械有限责任公司", "机械制造", "科技型中小企业", "零部件/配套制造", "科技型中小企业", 41, "陕西省科技型中小企业拟入库名单列明该企业位于西安市阎良区。"),
+  yanliangCompany("西安沧海航空科技有限公司", "航空科技/航空配套", "科技型中小企业", "零部件/配套制造", "科技型中小企业", 42, "陕西省科技型中小企业拟入库名单列明该企业位于西安市阎良区。"),
+  yanliangCompany("锐达恩特（西安）航空制造有限公司", "航空制造", "科技型中小企业", "零部件/配套制造", "科技型中小企业", 46, "陕西省科技型中小企业拟入库名单列明该企业位于西安市阎良区。"),
+  yanliangCompany("陕西融达铝合金新材料有限公司", "铝合金新材料", "科技型中小企业", "关键材料/铝合金", "科技型中小企业", 43, "陕西省科技型中小企业拟入库名单列明该企业位于西安市阎良区。"),
+  yanliangCompany("西安四方超轻材料有限公司", "超轻材料/航空材料", "重点企业", "关键材料/轻量化材料", "园区企业", 45, "报告称其为超轻金属材料企业，2026年重点帮扶开展技术攻关。"),
+  yanliangCompany("西安宇钛航空科技发展有限公司", "航空科技/钛合金配套", "科技型中小企业", "关键材料/钛合金", "科技型中小企业", 42, "陕西省科技型中小企业拟入库名单列明该企业位于西安市阎良区。"),
+  yanliangCompany("中铁长安重工有限公司", "重型装备制造", "支柱企业", "专用设备/重型装备", "支柱企业", 54, "报告称其重型电动自卸车等工程机械2024年正式量产，2025年拓展海外市场。"),
+  yanliangCompany("陕西无人装备科技有限公司", "无人装备/无人机", "重点企业", "低空经济/无人机", "重点企业", 52, "报告称其为无人装备/无人机研发制造企业，获关键技术攻关支持。"),
+  yanliangCompany("宇立航空", "无人机/航空装备", "重点企业", "低空经济/无人机", "重点企业", 50, "报告称其2026年力促投产达效。"),
+  yanliangCompany("黄河新兴（黄河集团无人机感知）", "无人机感知系统", "重点企业", "低空经济/感知系统", "新三板企业", 52, "报告称其无人机感知系统产业园落地建设，2024年挂牌新三板。"),
+  yanliangCompany("富沃德", "无人机整机制造", "重点企业", "低空经济/无人机整机", "重点企业", 50, "报告称其2026年支持整机批产上量。"),
+  yanliangCompany("陕西金宇航空科技有限公司", "航空维修/航材保障", "成长型企业", "航材保障/维修制造", "成长型企业", 47, "公开信息提及航空器材保障、维修制造等业务。"),
+  yanliangCompany("西安市航空基地天翼航空科技有限公司", "无人机研发制造", "成长型企业", "低空经济/无人机", "成长型企业", 50, "公开资料称其主营无人机新技术开发、推广、应用、制造、销售。"),
+  yanliangCompany("西安鑫旺矿业设备有限公司", "矿业设备再制造", "成长型企业", "专用设备/再制造", "成长型企业", 45, "公开招聘信息称其从事液压千斤制造与维修、液压缸制造、综采支架维修等。")
+];
+
+const questionBank = [
+  "企业当前核心产品、主要客户和生产组织模式是什么？",
+  "当前是否已经建设ERP、MES、WMS、QMS、SCADA或数据平台？使用效果如何？",
+  "生产计划、派工、报工、质量检验、设备维护中最痛的环节是什么？",
+  "哪些数据目前靠人工记录？哪些数据希望自动采集？",
+  "近一年是否有数字化项目预算、政策申报或集团考核要求？",
+  "如果只能优先解决一个问题，企业最希望先解决什么？",
+  "现有IT团队、业务负责人和外部供应商配合情况如何？",
+  "对实施周期、投资规模、验收方式有什么约束？"
+];
+
+export function App() {
+  const [state, setState] = usePersistentState();
+  const [active, setActive] = useState("dashboard");
+  const [selectedCompanyId, setSelectedCompanyId] = useState(state.companies[0]?.id ?? "");
+  const [profileCompanyId, setProfileCompanyId] = useState<string | null>(null);
+  const insights = useMemo(() => buildInsights(state), [state]);
+  const profileCompany = state.companies.find((company) => company.id === profileCompanyId);
+
+  function updateState(next: AppState) {
+    setState(next);
+    if (!next.companies.some((company) => company.id === selectedCompanyId)) {
+      setSelectedCompanyId(next.companies[0]?.id ?? "");
+    }
+  }
+
+  function openCompanyProfile(companyId: string) {
+    setSelectedCompanyId(companyId);
+    setProfileCompanyId(companyId);
+  }
+
+  function saveProfileCompany(company: ResearchCompany) {
+    updateState({
+      ...state,
+      companies: state.companies.map((item) => item.id === company.id ? company : item)
+    });
+    setSelectedCompanyId(company.id);
+    setProfileCompanyId(company.id);
+  }
+
+  return (
+    <div className="app-shell">
+      <aside className="sidebar">
+        <div className="brand">
+          <span className="brand-mark"><BarChart3 size={22} /></span>
+          <div>
+            <strong>区域调研</strong>
+            <small>Manufacturing Research</small>
+          </div>
+        </div>
+        <nav>
+          <NavItem icon={<BarChart3 size={18} />} label="数据看板" active={active === "dashboard"} onClick={() => setActive("dashboard")} />
+          <NavItem icon={<Building2 size={18} />} label="企业名单" active={active === "companies"} onClick={() => setActive("companies")} />
+          <NavItem icon={<Workflow size={18} />} label="产业链地图" active={active === "chain"} onClick={() => setActive("chain")} />
+          <NavItem icon={<ClipboardList size={18} />} label="问题生成" active={active === "questions"} onClick={() => setActive("questions")} />
+          <NavItem icon={<Scale size={18} />} label="政策匹配" active={active === "policies"} onClick={() => setActive("policies")} />
+          <NavItem icon={<CalendarDays size={18} />} label="调研计划" active={active === "plans"} onClick={() => setActive("plans")} />
+          <NavItem icon={<Mic2 size={18} />} label="调研记录" active={active === "records"} onClick={() => setActive("records")} />
+          <NavItem icon={<Target size={18} />} label="需求归纳" active={active === "needs"} onClick={() => setActive("needs")} />
+          <NavItem icon={<Lightbulb size={18} />} label="建议结论" active={active === "advice"} onClick={() => setActive("advice")} />
+        </nav>
+      </aside>
+
+      <main className="main">
+        <header className="topbar">
+          <div>
+            <h1>制造业数字化调研管理系统</h1>
+            <p>持续沉淀区域企业画像、调研过程、共通需求、能力匹配与决策依据。</p>
+          </div>
+        </header>
+
+        {active === "dashboard" ? <Dashboard state={state} insights={insights} /> : null}
+        {active === "companies" ? <Companies state={state} setState={updateState} selectedCompanyId={selectedCompanyId} setSelectedCompanyId={setSelectedCompanyId} openCompanyProfile={openCompanyProfile} /> : null}
+        {active === "chain" ? <IndustryChainMap state={state} openCompanyProfile={openCompanyProfile} /> : null}
+        {active === "questions" ? <QuestionGenerator state={state} setState={updateState} selectedCompanyId={selectedCompanyId} setSelectedCompanyId={setSelectedCompanyId} /> : null}
+        {active === "policies" ? <PolicyMatch state={state} /> : null}
+        {active === "plans" ? <Plans state={state} setState={updateState} /> : null}
+        {active === "records" ? <Records state={state} setState={updateState} selectedCompanyId={selectedCompanyId} /> : null}
+        {active === "needs" ? <Needs state={state} /> : null}
+        {active === "advice" ? <Advice state={state} insights={insights} /> : null}
+      </main>
+
+      {profileCompany ? (
+        <CompanyProfileDrawer
+          key={profileCompany.id}
+          company={profileCompany}
+          policies={policySupports.filter((policy) => policyMatchesCompany(policy, profileCompany))}
+          tenders={buildTenderSignals(profileCompany)}
+          onClose={() => setProfileCompanyId(null)}
+          onSave={saveProfileCompany}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function Dashboard({ state, insights }: { state: AppState; insights: ReturnType<typeof buildInsights> }) {
+  return (
+    <div className="page-grid">
+      <section className="metric-grid">
+        <Metric icon={<Building2 />} label="企业数" value={state.companies.length} />
+        <Metric icon={<CalendarDays />} label="计划数" value={state.plans.length} />
+        <Metric icon={<Mic2 />} label="记录数" value={state.records.length} />
+        <Metric icon={<Target />} label="需求数" value={insights.needs.length} />
+      </section>
+      <section className="grid two">
+        <ChartCard title="行业分布">
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={insights.industryData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="name" />
+              <YAxis allowDecimals={false} />
+              <Tooltip />
+              <Bar dataKey="value" radius={[8, 8, 0, 0]}>
+                {insights.industryData.map((_, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+        <ChartCard title="调研状态">
+          <ResponsiveContainer width="100%" height={260}>
+            <PieChart>
+              <Pie data={insights.statusData} dataKey="value" nameKey="name" innerRadius={58} outerRadius={92} paddingAngle={3}>
+                {insights.statusData.map((_, index) => <Cell key={index} fill={COLORS[index % COLORS.length]} />)}
+              </Pie>
+              <Tooltip />
+            </PieChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </section>
+      <section className="grid two">
+        <ChartCard title="企业类型分布">
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={insights.companyTypeData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} />
+              <XAxis dataKey="name" />
+              <YAxis allowDecimals={false} />
+              <Tooltip />
+              <Bar dataKey="value" radius={[8, 8, 0, 0]} fill="#14b8a6" />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+        <ChartCard title="产业链位置分布">
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={insights.chainPositionData} layout="vertical" margin={{ left: 28 }}>
+              <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+              <XAxis type="number" allowDecimals={false} />
+              <YAxis dataKey="name" type="category" width={116} />
+              <Tooltip />
+              <Bar dataKey="value" radius={[0, 8, 8, 0]} fill="#2563eb" />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      </section>
+      <section className="grid two">
+        <Panel title="共通需求 Top">
+          <div className="rank-list">
+            {insights.categoryData.map((item) => (
+              <div className="rank-row" key={item.name}>
+                <span>{item.name}</span>
+                <strong>{item.value}</strong>
+              </div>
+            ))}
+          </div>
+        </Panel>
+        <Panel title="能力匹配概览">
+          <div className="capability-list">
+            {insights.capabilityHits.map((item) => (
+              <div className="capability-row" key={item.name}>
+                <CheckCircle2 size={18} />
+                <span>{item.name}</span>
+                <strong>{item.value} 条需求</strong>
+              </div>
+            ))}
+          </div>
+        </Panel>
+        <Panel title="产业链共通需求判断">
+          <div className="advice-list">
+            {insights.chainSuggestions.map((item) => <div className="advice" key={item}><Target size={18} /><span>{item}</span></div>)}
+          </div>
+        </Panel>
+      </section>
+    </div>
+  );
+}
+
+function Companies({ state, setState, selectedCompanyId, setSelectedCompanyId, openCompanyProfile }: { state: AppState; setState: (state: AppState) => void; selectedCompanyId: string; setSelectedCompanyId: (id: string) => void; openCompanyProfile: (id: string) => void }) {
+  const [keyword, setKeyword] = useState("");
+  const [drawerMode, setDrawerMode] = useState<"create" | "edit" | null>(null);
+  const [editingCompany, setEditingCompany] = useState<ResearchCompany>(emptyCompany());
+  const filtered = state.companies.filter((company) => [company.name, company.region, company.industry, company.companyType, company.chainPosition, company.notes].join(" ").includes(keyword));
+
+  async function importExcel(file: File) {
+    const bytes = await file.arrayBuffer();
+    const workbook = XLSX.read(bytes);
+    const sheet = workbook.Sheets[workbook.SheetNames[0]];
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
+    const imported = rows.map((row) => ({
+      id: uid(),
+      name: stringCell(row, ["企业名称", "公司名称", "name", "Name"]) || "未命名企业",
+      region: stringCell(row, ["区域", "地区", "region"]) || "",
+      industry: stringCell(row, ["行业", "industry"]) || "",
+      companyType: stringCell(row, ["企业类型", "类型", "companyType"]) || "",
+      chainPosition: stringCell(row, ["产业链位置", "链条位置", "chainPosition"]) || "",
+      scale: stringCell(row, ["规模", "人员规模", "scale"]) || "",
+      contact: stringCell(row, ["联系人", "联系方式", "contact"]) || "",
+      status: "待调研" as CompanyStatus,
+      maturity: Number(stringCell(row, ["数字化成熟度", "成熟度", "maturity"]) || 30),
+      notes: stringCell(row, ["备注", "notes"]) || ""
+    }));
+    setState({ ...state, companies: [...state.companies, ...imported] });
+  }
+
+  function openCreate() {
+    setEditingCompany(emptyCompany());
+    setDrawerMode("create");
+  }
+
+  function openDetail(company: ResearchCompany) {
+    setSelectedCompanyId(company.id);
+    openCompanyProfile(company.id);
+  }
+
+  function openEdit(company: ResearchCompany) {
+    setEditingCompany(company);
+    setDrawerMode("edit");
+  }
+
+  function saveCompany() {
+    if (!editingCompany.name.trim()) return;
+    if (drawerMode === "edit") {
+      setState({
+        ...state,
+        companies: state.companies.map((company) => company.id === editingCompany.id ? editingCompany : company)
+      });
+      setSelectedCompanyId(editingCompany.id);
+    } else {
+      const created = { ...editingCompany, id: uid(), region: editingCompany.region || "西安市阎良区 / 西安航空基地" };
+      setState({ ...state, companies: [...state.companies, created] });
+      setSelectedCompanyId(created.id);
+    }
+    setDrawerMode(null);
+  }
+
+  return (
+    <div className="grid">
+      <Panel
+        title="企业名单"
+        action={
+          <div className="panel-actions">
+            <label className="file-button"><FileSpreadsheet size={16} /> Excel导入<input type="file" accept=".xlsx,.xls,.csv" onChange={(event) => event.target.files?.[0] && importExcel(event.target.files[0])} /></label>
+            <button className="button" type="button" onClick={openCreate}><Plus size={16} /> 新增企业</button>
+          </div>
+        }
+      >
+        <div className="toolbar">
+          <div className="search-box"><Search size={17} /><input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索企业、区域、行业" /></div>
+        </div>
+        <div className="company-table">
+          {filtered.map((company) => (
+            <button className={`company-row ${company.id === selectedCompanyId ? "active" : ""}`} key={company.id} onClick={() => openDetail(company)}>
+              <strong>{company.name}</strong>
+              <span>{company.region || "-"} / {company.industry || "-"} / {company.companyType || "-"} / {company.chainPosition || "-"}</span>
+              <em>{company.status}</em>
+            </button>
+          ))}
+        </div>
+      </Panel>
+
+      {drawerMode ? (
+        <div className="drawer-layer" onMouseDown={() => setDrawerMode(null)}>
+          <aside className="drawer" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="drawer-head">
+              <div>
+                <h2>{drawerMode === "create" ? "新增企业" : "编辑企业"}</h2>
+                <p>{editingCompany.name || "阎良区制造业企业"}</p>
+              </div>
+              <button className="icon-button" type="button" onClick={() => setDrawerMode(null)}><X size={18} /></button>
+            </div>
+            <CompanyEditor company={editingCompany} setCompany={setEditingCompany} onSave={saveCompany} />
+          </aside>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function CompanyProfileDrawer({ company, policies, tenders, onClose, onSave }: { company: ResearchCompany; policies: PolicySupport[]; tenders: TenderSignal[]; onClose: () => void; onSave: (company: ResearchCompany) => void }) {
+  const [mode, setMode] = useState<"detail" | "edit">("detail");
+  const [draft, setDraft] = useState(company);
+
+  function save() {
+    if (!draft.name.trim()) return;
+    onSave(draft);
+    setMode("detail");
+  }
+
+  return (
+    <div className="drawer-layer" onMouseDown={onClose}>
+      <aside className="drawer" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="drawer-head">
+          <div>
+            <h2>{mode === "edit" ? "编辑企业" : "企业详情"}</h2>
+            <p>{company.name}</p>
+          </div>
+          <button className="icon-button" type="button" onClick={onClose}><X size={18} /></button>
+        </div>
+        {mode === "detail" ? (
+          <CompanyDetail company={company} policies={policies} tenders={tenders} onEdit={() => {
+            setDraft(company);
+            setMode("edit");
+          }} />
+        ) : (
+          <CompanyEditor company={draft} setCompany={setDraft} onSave={save} />
+        )}
+      </aside>
+    </div>
+  );
+}
+
+function CompanyDetail({ company, policies, tenders, onEdit }: { company: ResearchCompany; policies: PolicySupport[]; tenders: TenderSignal[]; onEdit: () => void }) {
+  return (
+    <div className="drawer-content">
+      <div className="detail-grid">
+        <DetailItem label="区域" value={company.region} />
+        <DetailItem label="行业" value={company.industry} />
+        <DetailItem label="企业类型" value={company.companyType} />
+        <DetailItem label="产业链位置" value={company.chainPosition} />
+        <DetailItem label="规模" value={company.scale} />
+        <DetailItem label="调研状态" value={company.status} />
+        <DetailItem label="联系人" value={company.contact} />
+        <DetailItem label="成熟度" value={`${company.maturity}`} />
+      </div>
+      <section className="detail-section">
+        <h3>企业说明</h3>
+        <p>{company.notes || "暂无补充信息。"}</p>
+      </section>
+      <section className="detail-section">
+        <h3>产业调研关注点</h3>
+        <ul>
+          {recommendedFocus(company).map((item) => <li key={item}>{item}</li>)}
+        </ul>
+      </section>
+      <section className="detail-section">
+        <h3>招投标信息</h3>
+        <div className="tender-list">
+          {tenders.map((tender) => (
+            <div className="tender-card" key={tender.id}>
+              <div>
+                <strong>{tender.title}</strong>
+                <span>{tender.source} / {tender.date} / {tender.status}</span>
+              </div>
+              <p>{tender.relevance}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+      <section className="detail-section">
+        <h3>适配政府补贴政策</h3>
+        <div className="policy-mini-list">
+          {policies.map((policy) => (
+            <div className="policy-mini-card" key={policy.id}>
+              <div>
+                <strong>{policy.name}</strong>
+                <span>{policy.level} / {policy.amount}</span>
+              </div>
+              <p>{policy.decisionValue}</p>
+              <div className="policy-tags">
+                {policy.serviceMatches.map((item) => <span key={item}>{item}</span>)}
+              </div>
+            </div>
+          ))}
+          {!policies.length ? <p>暂无自动匹配政策，建议补充企业类型、产业链位置后重新判断。</p> : null}
+        </div>
+      </section>
+      <button className="button" type="button" onClick={onEdit}>编辑企业</button>
+    </div>
+  );
+}
+
+function CompanyEditor({ company, setCompany, onSave }: { company: ResearchCompany; setCompany: (company: ResearchCompany) => void; onSave: () => void }) {
+  return (
+    <div className="drawer-content">
+      <div className="form-grid">
+        <Field label="企业名称" value={company.name} onChange={(name) => setCompany({ ...company, name })} />
+        <Field label="调研区域" value={company.region} onChange={(region) => setCompany({ ...company, region })} />
+        <Field label="行业" value={company.industry} onChange={(industry) => setCompany({ ...company, industry })} />
+        <Field label="企业类型" value={company.companyType} onChange={(companyType) => setCompany({ ...company, companyType })} />
+        <Field label="产业链位置" value={company.chainPosition} onChange={(chainPosition) => setCompany({ ...company, chainPosition })} />
+        <Field label="企业规模" value={company.scale} onChange={(scale) => setCompany({ ...company, scale })} />
+        <Field label="联系人" value={company.contact} onChange={(contact) => setCompany({ ...company, contact })} />
+        <label>调研状态<select value={company.status} onChange={(event) => setCompany({ ...company, status: event.target.value as CompanyStatus })}><option>待调研</option><option>已预约</option><option>调研中</option><option>已完成</option></select></label>
+      </div>
+      <label>备注<textarea value={company.notes} onChange={(event) => setCompany({ ...company, notes: event.target.value })} /></label>
+      <button className="button" type="button" onClick={onSave}><CheckCircle2 size={16} /> 保存</button>
+    </div>
+  );
+}
+
+function DetailItem({ label, value }: { label: string; value: string }) {
+  return <div className="detail-item"><span>{label}</span><strong>{value || "-"}</strong></div>;
+}
+
+function IndustryChainMap({ state, openCompanyProfile }: { state: AppState; openCompanyProfile: (id: string) => void }) {
+  const stages = buildChainStages(state.companies);
+  const coreRelations = buildCoreRelations(state.companies);
+  const [mode, setMode] = useState<"classification" | "network">("classification");
+  return (
+    <div className="page-grid chain-page">
+      <section className="panel chain-workspace">
+        <div className="panel-head chain-workspace-head">
+          <div>
+            <h2>航空制造产业链地图</h2>
+            <p>{mode === "classification" ? "按产业环节梳理阎良区企业分布，适合识别共通需求和样板企业。" : "围绕一飞院、西飞、试飞院、强度所观察设计、制造、验证、试飞之间的协同关系。"}</p>
+          </div>
+          <div className="mode-switch" role="tablist" aria-label="产业链地图模式">
+            <button className={mode === "classification" ? "active" : ""} type="button" onClick={() => setMode("classification")}>产业分类视图</button>
+            <button className={mode === "network" ? "active" : ""} type="button" onClick={() => setMode("network")}>核心节点协同网络</button>
+          </div>
+        </div>
+
+        {mode === "classification" ? (
+          <div className="chain-map expanded">
+            {stages.map((stage, index) => (
+              <div className="chain-stage" key={stage.name}>
+                <div className="chain-stage-head">
+                  <span>{index + 1}</span>
+                  <div>
+                    <strong>{stage.name}</strong>
+                    <small>{stage.description}</small>
+                  </div>
+                  <em>{stage.companies.length} 个节点</em>
+                </div>
+                <div className="chain-companies">
+                  {stage.companies.map((company) => (
+                    <button
+                      className={`chain-company ${company.companyType.includes("链主") ? "leader" : ""}`}
+                      key={company.id}
+                      type="button"
+                      onClick={() => openCompanyProfile(company.id)}
+                    >
+                      <strong>{company.name}</strong>
+                      <span>{company.companyType}</span>
+                      <small>{company.chainPosition}</small>
+                    </button>
+                  ))}
+                  {!stage.companies.length ? <div className="empty-stage">暂无企业</div> : null}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div className="network-board">
+            {coreRelations.map((core) => (
+              <div className="network-core-card" key={core.name}>
+                <div className="network-core-head">
+                  <div>
+                    <strong>{core.name}</strong>
+                    <span>{core.role}</span>
+                  </div>
+                </div>
+                <div className="network-relations">
+                  {core.relations.map((relation) => {
+                    const visibleTargets = relation.targets.slice(0, 9);
+                    const rest = relation.targets.length - visibleTargets.length;
+                    return (
+                      <div className="network-relation" key={`${core.name}-${relation.label}`}>
+                        <div className="network-relation-head">
+                          <strong>{relation.label}</strong>
+                          <span>{relation.targets.length} 个节点</span>
+                        </div>
+                        <div className="network-targets">
+                          {visibleTargets.map((target) => <button type="button" key={target.id} onClick={() => openCompanyProfile(target.id)}>{target.name}</button>)}
+                          {rest > 0 ? <em>+{rest}</em> : null}
+                          {!relation.targets.length ? <span>暂无匹配节点</span> : null}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
+      </section>
+      <section className="grid two">
+        <Panel title="链主-配套观察">
+          <div className="advice-list">
+            <div className="advice"><Workflow size={18} /><span>链主企业负责定义质量标准、供应商协同节奏和产业链数据口径，是区域数字化需求的上游牵引。</span></div>
+            <div className="advice"><Workflow size={18} /><span>配套制造企业更多受订单、交付、质量追溯和设备效率约束，适合以轻量MES、设备采集和质量数据治理切入。</span></div>
+            <div className="advice"><Workflow size={18} /><span>材料和特种工艺企业对研发试制、批次一致性、检验数据和认证资料管理更敏感，应独立设计调研问题。</span></div>
+          </div>
+        </Panel>
+        <Panel title="招标信息接入建议">
+          <div className="advice-list">
+            <div className="advice"><Search size={18} /><span>企业详情后续增加“招标/采购信息”页签，按企业名、产业关键词和数字化关键词手动更新。</span></div>
+            <div className="advice"><CalendarDays size={18} /><span>定期更新建议从每周一次开始，保存来源、发布时间、标题、关键词和是否数字化相关。</span></div>
+            <div className="advice"><Sparkles size={18} /><span>招标线索命中MES、工业互联网、质量追溯、设备采购时，自动追加到该企业调研问题中。</span></div>
+          </div>
+        </Panel>
+      </section>
+    </div>
+  );
+}
+
+function PolicyMatch({ state }: { state: AppState }) {
+  const matches = policySupports.map((policy) => ({
+    policy,
+    companies: state.companies.filter((company) => policyMatchesCompany(policy, company))
+  }));
+  return (
+    <div className="page-grid">
+      <section className="metric-grid">
+        <Metric icon={<Scale />} label="政策条目" value={policySupports.length} />
+        <Metric icon={<Target />} label="可匹配企业" value={new Set(matches.flatMap((item) => item.companies.map((company) => company.id))).size} />
+        <Metric icon={<Sparkles />} label="服务匹配点" value={new Set(policySupports.flatMap((policy) => policy.serviceMatches)).size} />
+        <Metric icon={<Building2 />} label="企业池" value={state.companies.length} />
+      </section>
+      <section className="grid two">
+        <Panel title="政策扶持与数字化服务匹配">
+          <div className="policy-list">
+            {matches.map(({ policy, companies }) => (
+              <div className="policy-card" key={policy.id}>
+                <div className="policy-head">
+                  <div>
+                    <strong>{policy.name}</strong>
+                    <span>{policy.level} / {policy.amount}</span>
+                  </div>
+                  <em>{companies.length} 家匹配</em>
+                </div>
+                <p>{policy.decisionValue}</p>
+                <div className="policy-tags">
+                  {policy.serviceMatches.map((item) => <span key={item}>{item}</span>)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Panel>
+        <Panel title="降低决策门槛的调研追问">
+          <div className="advice-list">
+            <div className="advice"><Scale size={18} /><span>企业是否已有技改、智能制造、工业互联网、专精特新、高企、研发投入补助等申报计划？</span></div>
+            <div className="advice"><Scale size={18} /><span>项目是否可拆成“诊断规划 + 小范围试点 + 技改设备/软件投入”三段，降低首期预算压力？</span></div>
+            <div className="advice"><Scale size={18} /><span>若政策补贴覆盖硬件、软件、研发投入或示范试点，客户内部决策可从“成本项”转成“政策窗口期项目”。</span></div>
+            <div className="advice"><Scale size={18} /><span>对链主和平台单位，重点问是否有带动配套企业、设备共享、产业链协同和数据平台的专项资金机会。</span></div>
+          </div>
+        </Panel>
+      </section>
+    </div>
+  );
+}
+
+function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedCompanyId }: { state: AppState; setState: (state: AppState) => void; selectedCompanyId: string; setSelectedCompanyId: (id: string) => void }) {
+  const selectedCompany = state.companies.find((company) => company.id === selectedCompanyId) ?? state.companies[0];
+  const [editingTemplate, setEditingTemplate] = useState<QuestionTemplate>(emptyTemplate());
+  const [draftQuestions, setDraftQuestions] = useState<string[]>(() => selectedCompany ? generateQuestions(selectedCompany, state.questionTemplates) : []);
+  const generated = selectedCompany ? generateQuestions(selectedCompany, state.questionTemplates) : [];
+
+  function refreshQuestions() {
+    if (!selectedCompany) return;
+    setDraftQuestions(generated);
+  }
+
+  function saveTemplate() {
+    if (!editingTemplate.question.trim()) return;
+    const template = { ...editingTemplate, id: editingTemplate.id || uid() };
+    const exists = state.questionTemplates.some((item) => item.id === template.id);
+    setState({
+      ...state,
+      questionTemplates: exists
+        ? state.questionTemplates.map((item) => item.id === template.id ? template : item)
+        : [...state.questionTemplates, template]
+    });
+    setEditingTemplate(emptyTemplate());
+  }
+
+  function saveAsPlan() {
+    if (!selectedCompany || !draftQuestions.length) return;
+    setState({
+      ...state,
+      plans: [
+        ...state.plans,
+        {
+          id: uid(),
+          companyId: selectedCompany.id,
+          date: new Date().toISOString().slice(0, 10),
+          owner: "我",
+          objective: `围绕企业类型“${selectedCompany.companyType}”和产业链位置“${selectedCompany.chainPosition}”开展调研：\n${draftQuestions.map((item, index) => `${index + 1}. ${item}`).join("\n")}`,
+          status: "计划中"
+        }
+      ]
+    });
+  }
+
+  return (
+    <div className="grid two">
+      <Panel title="按企业生成调研问题">
+        <div className="form-grid">
+          <label>调研企业<select value={selectedCompany?.id ?? ""} onChange={(event) => {
+            setSelectedCompanyId(event.target.value);
+            const company = state.companies.find((item) => item.id === event.target.value);
+            if (company) setDraftQuestions(generateQuestions(company, state.questionTemplates));
+          }}>{state.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></label>
+          <DetailItem label="企业类型" value={selectedCompany?.companyType ?? "-"} />
+          <DetailItem label="产业链位置" value={selectedCompany?.chainPosition ?? "-"} />
+          <DetailItem label="行业" value={selectedCompany?.industry ?? "-"} />
+        </div>
+        <div className="question-generated-list">
+          {draftQuestions.map((question, index) => (
+            <label key={`${question}-${index}`}>问题 {index + 1}<textarea value={question} onChange={(event) => setDraftQuestions(draftQuestions.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} /></label>
+          ))}
+        </div>
+        <div className="drawer-actions-inline">
+          <button className="button secondary" type="button" onClick={refreshQuestions}><Sparkles size={16} /> 重新生成</button>
+          <button className="button" type="button" onClick={saveAsPlan}><CheckCircle2 size={16} /> 保存为调研计划</button>
+        </div>
+      </Panel>
+
+      <Panel title="问题模板库">
+        <div className="template-editor">
+          <div className="form-grid">
+            <Field label="问题分类" value={editingTemplate.category} onChange={(category) => setEditingTemplate({ ...editingTemplate, category })} />
+            <Field label="适用企业类型" value={editingTemplate.appliesToTypes.join("、")} onChange={(value) => setEditingTemplate({ ...editingTemplate, appliesToTypes: splitTags(value) })} />
+            <Field label="适用产业链位置" value={editingTemplate.appliesToPositions.join("、")} onChange={(value) => setEditingTemplate({ ...editingTemplate, appliesToPositions: splitTags(value) })} />
+          </div>
+          <label>问题内容<textarea value={editingTemplate.question} onChange={(event) => setEditingTemplate({ ...editingTemplate, question: event.target.value })} /></label>
+          <button className="button" type="button" onClick={saveTemplate}><Plus size={16} /> 保存模板</button>
+        </div>
+        <div className="template-list">
+          {state.questionTemplates.map((template) => (
+            <button className="template-row" key={template.id} type="button" onClick={() => setEditingTemplate(template)}>
+              <strong>{template.category}</strong>
+              <span>{template.question}</span>
+              <em>{[...template.appliesToTypes, ...template.appliesToPositions].join(" / ") || "通用"}</em>
+            </button>
+          ))}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function recommendedFocus(company: ResearchCompany) {
+  if (company.companyType.includes("链主") || company.chainPosition.includes("总装")) {
+    return ["供应商协同与交付计划", "质量体系贯通与数据标准", "产能计划与项目型制造管理", "链上企业数据共享边界"];
+  }
+  if (company.chainPosition.includes("研发设计") || company.chainPosition.includes("总体设计")) {
+    return ["型号研制流程与需求变更管理", "设计-制造-试验数据贯通", "仿真/试验数据管理", "供应商设计协同和技术状态控制"];
+  }
+  if (company.chainPosition.includes("强度") || company.chainPosition.includes("试验验证")) {
+    return ["试验任务计划与资源排程", "试验数据采集、治理与追溯", "试验报告自动化和知识沉淀", "虚拟仿真/数字孪生与实测数据融合"];
+  }
+  if (company.chainPosition.includes("试飞") || company.chainPosition.includes("适航")) {
+    return ["试飞任务计划与风险管理", "飞参/遥测/机载测试数据管理", "适航符合性证据链", "试飞问题闭环和型号知识库"];
+  }
+  if (company.chainPosition.includes("平台") || company.companyType.includes("平台")) {
+    return ["产业数据资源目录", "企业服务和设备共享流程", "政策申报与融资服务数据", "平台与企业系统接口边界"];
+  }
+  if (company.chainPosition.includes("零部件") || company.chainPosition.includes("精密加工")) {
+    return ["订单和工序进度透明", "设备联网与工艺参数采集", "质量追溯和检验数据沉淀", "成本核算与交付风险预警"];
+  }
+  if (company.chainPosition.includes("材料")) {
+    return ["研发试制和配方/工艺版本管理", "批次一致性与检验数据", "设备工艺参数管理", "客户认证和质量文档管理"];
+  }
+  if (company.chainPosition.includes("无人机") || company.chainPosition.includes("低空")) {
+    return ["研发项目管理", "试飞/测试数据管理", "批产准备和供应链协同", "售后运维和政策申报"];
+  }
+  return ["数字化现状诊断", "核心业务流程梳理", "数据采集和系统集成现状", "近期建设计划和预算约束"];
+}
+
+function Plans({ state, setState }: { state: AppState; setState: (state: AppState) => void }) {
+  const [draft, setDraft] = useState<Omit<ResearchPlan, "id">>({
+    companyId: state.companies[0]?.id ?? "",
+    date: new Date().toISOString().slice(0, 10),
+    owner: "我",
+    objective: "了解企业数字化现状、关键痛点、近期建设计划和可匹配能力。",
+    status: "计划中"
+  });
+
+  function createPlan() {
+    if (!draft.companyId) return;
+    setState({ ...state, plans: [...state.plans, { ...draft, id: uid() }] });
+  }
+
+  return (
+    <div className="grid two">
+      <Panel title="制定调研计划">
+        <div className="form-grid">
+          <label>调研企业<select value={draft.companyId} onChange={(event) => setDraft({ ...draft, companyId: event.target.value })}>{state.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></label>
+          <Field label="调研日期" type="date" value={draft.date} onChange={(date) => setDraft({ ...draft, date })} />
+          <Field label="负责人" value={draft.owner} onChange={(owner) => setDraft({ ...draft, owner })} />
+          <label>状态<select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as ResearchPlan["status"] })}><option>计划中</option><option>已完成</option></select></label>
+        </div>
+        <label>调研目标<textarea value={draft.objective} onChange={(event) => setDraft({ ...draft, objective: event.target.value })} /></label>
+        <button className="button" type="button" onClick={createPlan}><CalendarDays size={16} /> 生成计划</button>
+      </Panel>
+      <Panel title="推荐调研问题">
+        <div className="question-list">
+          {questionBank.map((question, index) => <div className="question" key={question}><strong>{index + 1}</strong><span>{question}</span></div>)}
+        </div>
+      </Panel>
+      <Panel title="计划列表">
+        <div className="card-list">
+          {state.plans.map((plan) => <PlanCard key={plan.id} plan={plan} company={state.companies.find((company) => company.id === plan.companyId)} />)}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function Records({ state, setState, selectedCompanyId }: { state: AppState; setState: (state: AppState) => void; selectedCompanyId: string }) {
+  const [companyId, setCompanyId] = useState(selectedCompanyId);
+  const [summary, setSummary] = useState("");
+  const [transcript, setTranscript] = useState("");
+  const [conclusion, setConclusion] = useState("");
+  const [audio, setAudio] = useState<{ name: string; url: string } | null>(null);
+  const [need, setNeed] = useState<Omit<NeedItem, "id">>({
+    category: "生产执行",
+    description: "",
+    priority: "中",
+    capability: "MES/MOM实施落地"
+  });
+  const [needs, setNeeds] = useState<NeedItem[]>([]);
+
+  function addNeed() {
+    if (!need.description.trim()) return;
+    setNeeds([...needs, { ...need, id: uid(), capability: matchCapability(need.description, state.capabilities).name }]);
+    setNeed({ ...need, description: "" });
+  }
+
+  function saveRecord() {
+    if (!companyId) return;
+    const record: ResearchRecord = {
+      id: uid(),
+      companyId,
+      date: new Date().toISOString().slice(0, 10),
+      interviewer: "我",
+      summary,
+      transcript,
+      audioName: audio?.name,
+      audioUrl: audio?.url,
+      needs,
+      conclusion
+    };
+    setState({
+      ...state,
+      records: [...state.records, record],
+      companies: state.companies.map((company) => company.id === companyId ? { ...company, status: "已完成" } : company)
+    });
+    setSummary("");
+    setTranscript("");
+    setConclusion("");
+    setNeeds([]);
+    setAudio(null);
+  }
+
+  return (
+    <div className="grid two">
+      <Panel title="记录调研过程" action={<label className="file-button"><Upload size={16} /> 上传录音<input type="file" accept="audio/*" onChange={(event) => {
+        const file = event.target.files?.[0];
+        if (file) setAudio({ name: file.name, url: URL.createObjectURL(file) });
+      }} /></label>}>
+        <div className="form-grid">
+          <label>调研企业<select value={companyId} onChange={(event) => setCompanyId(event.target.value)}>{state.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></label>
+          <Field label="访谈人" value="我" onChange={() => undefined} />
+        </div>
+        {audio ? <div className="audio-card"><FileAudio size={18} /><span>{audio.name}</span><audio controls src={audio.url} /></div> : null}
+        <label>调研摘要<textarea value={summary} onChange={(event) => setSummary(event.target.value)} placeholder="记录企业背景、现状、关键问题和判断" /></label>
+        <label>语音转写文本<textarea value={transcript} onChange={(event) => setTranscript(event.target.value)} placeholder="先支持上传录音；后续可接入语音识别服务自动转写。当前可粘贴转写文本。" /></label>
+        <label>调研结论<textarea value={conclusion} onChange={(event) => setConclusion(event.target.value)} placeholder="沉淀本企业调研结论、机会判断和下一步动作" /></label>
+      </Panel>
+      <Panel title="提取数字化需求">
+        <div className="form-grid">
+          <label>需求类别<select value={need.category} onChange={(event) => setNeed({ ...need, category: event.target.value })}><option>生产执行</option><option>质量追溯</option><option>设备数据</option><option>仓储物流</option><option>经营分析</option><option>数字化规划</option></select></label>
+          <label>优先级<select value={need.priority} onChange={(event) => setNeed({ ...need, priority: event.target.value as NeedPriority })}><option>高</option><option>中</option><option>低</option></select></label>
+        </div>
+        <label>需求描述<textarea value={need.description} onChange={(event) => setNeed({ ...need, description: event.target.value })} /></label>
+        <button className="button secondary" type="button" onClick={addNeed}><Sparkles size={16} /> 自动匹配能力并加入</button>
+        <div className="need-list">
+          {needs.map((item) => <NeedCard key={item.id} need={item} />)}
+        </div>
+        <button className="button" type="button" onClick={saveRecord}><CheckCircle2 size={16} /> 保存调研记录</button>
+      </Panel>
+      <Panel title="历史调研记录">
+        <div className="card-list">
+          {state.records.map((record) => <RecordCard key={record.id} record={record} company={state.companies.find((company) => company.id === record.companyId)} />)}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function Needs({ state }: { state: AppState }) {
+  const allNeeds = state.records.flatMap((record) => record.needs.map((need) => ({ ...need, company: state.companies.find((company) => company.id === record.companyId)?.name ?? "-" })));
+  return (
+    <Panel title="需求归纳与能力匹配">
+      <div className="need-board">
+        {allNeeds.map((need) => <NeedCard key={`${need.company}-${need.id}`} need={need} company={need.company} />)}
+      </div>
+    </Panel>
+  );
+}
+
+function Advice({ state, insights }: { state: AppState; insights: ReturnType<typeof buildInsights> }) {
+  return (
+    <div className="grid two">
+      <Panel title="调研建议">
+        <div className="advice-list">
+          {insights.suggestions.map((item) => <div className="advice" key={item}><Lightbulb size={18} /><span>{item}</span></div>)}
+        </div>
+      </Panel>
+      <Panel title="区域结论草稿">
+        <textarea className="conclusion-box" readOnly value={buildConclusion(state, insights)} />
+      </Panel>
+      <Panel title="你的能力库">
+        <div className="capability-list">
+          {state.capabilities.map((capability) => (
+            <div className="capability-card" key={capability.id}>
+              <Settings2 size={18} />
+              <div><strong>{capability.name}</strong><span>{capability.description}</span></div>
+            </div>
+          ))}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
+  return <button className={active ? "active" : ""} onClick={onClick}>{icon}<span>{label}</span></button>;
+}
+
+function Metric({ icon, label, value }: { icon: React.ReactNode; label: string; value: number }) {
+  return <div className="metric"><span>{icon}</span><div><strong>{value}</strong><small>{label}</small></div></div>;
+}
+
+function Panel({ title, action, children }: { title: string; action?: React.ReactNode; children: React.ReactNode }) {
+  return <section className="panel"><div className="panel-head"><h2>{title}</h2>{action}</div>{children}</section>;
+}
+
+function ChartCard({ title, children }: { title: string; children: React.ReactNode }) {
+  return <Panel title={title}>{children}</Panel>;
+}
+
+function Field({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
+  return <label>{label}<input type={type} value={value} onChange={(event) => onChange(event.target.value)} /></label>;
+}
+
+function PlanCard({ plan, company }: { plan: ResearchPlan; company?: ResearchCompany }) {
+  return <div className="data-card"><strong>{company?.name ?? "-"}</strong><span>{plan.date} / {plan.owner} / {plan.status}</span><p>{plan.objective}</p></div>;
+}
+
+function RecordCard({ record, company }: { record: ResearchRecord; company?: ResearchCompany }) {
+  return <div className="data-card"><strong>{company?.name ?? "-"}</strong><span>{record.date} / 需求 {record.needs.length} 条 {record.audioName ? `/ 录音：${record.audioName}` : ""}</span><p>{record.conclusion || record.summary}</p></div>;
+}
+
+function NeedCard({ need, company }: { need: NeedItem; company?: string }) {
+  return <div className="need-card"><div><strong>{need.category}</strong>{company ? <span>{company}</span> : null}</div><p>{need.description}</p><footer><em>{need.priority}</em><span>{need.capability}</span></footer></div>;
+}
+
+function usePersistentState() {
+  const [state, setStateValue] = useState<AppState>(() => {
+    const raw = localStorage.getItem(STORE_KEY);
+    if (!raw) {
+      const next = mergeYanliangCompanies(initialState);
+      localStorage.setItem(STORE_KEY, JSON.stringify(next));
+      return next;
+    }
+    try {
+      const parsed = JSON.parse(raw) as AppState;
+      const next = mergeYanliangCompanies(parsed);
+      localStorage.setItem(STORE_KEY, JSON.stringify(next));
+      return next;
+    } catch {
+      const next = mergeYanliangCompanies(initialState);
+      localStorage.setItem(STORE_KEY, JSON.stringify(next));
+      return next;
+    }
+  });
+  function setState(next: AppState) {
+    setStateValue(next);
+    localStorage.setItem(STORE_KEY, JSON.stringify(next));
+  }
+  return [state, setState] as const;
+}
+
+function mergeYanliangCompanies(state: AppState): AppState {
+  const questionTemplates = state.questionTemplates?.length ? state.questionTemplates : defaultQuestionTemplates();
+  const reportCompanyMap = new Map(yanliangCompanies.map((company) => [canonicalCompanyName(company.name), company]));
+  const normalizedCompanies = state.companies
+    .filter((company) => isYanliangCompany(company) || reportCompanyMap.has(canonicalCompanyName(company.name)))
+    .map((company) => ({
+      ...company,
+      companyType: company.companyType || inferCompanyType(company),
+      chainPosition: company.chainPosition || inferChainPosition(company)
+    }))
+    .map((company) => {
+      const reportCompany = reportCompanyMap.get(canonicalCompanyName(company.name));
+      return reportCompany ? { ...company, ...reportCompany, id: company.id, status: company.status } : company;
+    });
+  const seen = new Set<string>();
+  const dedupedCompanies = normalizedCompanies.filter((company) => {
+    const key = canonicalCompanyName(company.name);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const additions = yanliangCompanies.filter((company) => !seen.has(canonicalCompanyName(company.name)));
+  const companies = additions.length ? [...dedupedCompanies, ...additions] : dedupedCompanies;
+  const companyIds = new Set(companies.map((company) => company.id));
+  const plans = state.plans.filter((plan) => companyIds.has(plan.companyId));
+  const records = state.records.filter((record) => companyIds.has(record.companyId));
+  const sampleCompany = companies.find((company) => company.name === "西安泽达航空制造有限责任公司") ?? companies.find((company) => company.region.includes("阎良"));
+  if (!sampleCompany || records.some((record) => record.id === "yanliang-sample-record")) {
+    return { ...state, companies, plans, records, questionTemplates };
+  }
+  return {
+    ...state,
+    questionTemplates,
+    companies: companies.map((company) => company.id === sampleCompany.id ? { ...company, status: "调研中" } : company),
+    plans: [
+      ...plans,
+      {
+        id: "yanliang-sample-plan",
+        companyId: sampleCompany.id,
+        date: new Date().toISOString().slice(0, 10),
+        owner: "我",
+        objective: "验证阎良区航空制造企业调研闭环，重点了解设备数据采集、质量追溯、生产执行和数字化规划需求。",
+        status: "计划中"
+      }
+    ],
+    records: [
+      ...records,
+      {
+        id: "yanliang-sample-record",
+        companyId: sampleCompany.id,
+        date: new Date().toISOString().slice(0, 10),
+        interviewer: "我",
+        summary: "样例记录：企业位于阎良区航空制造产业链，公开资料显示具备飞机零件制造能力。调研应关注生产过程透明化、质量追溯、设备联网和订单交付协同。",
+        transcript: "这是用于系统功能验证的样例转写文本。正式调研时可上传录音并粘贴或接入语音识别结果。",
+        needs: [
+          {
+            id: "yanliang-need-1",
+            category: "设备数据",
+            description: "希望将关键加工设备、检验设备和工序状态接入统一数据平台，减少人工统计。",
+            priority: "高",
+            capability: "设备联网与工业数据采集"
+          },
+          {
+            id: "yanliang-need-2",
+            category: "质量追溯",
+            description: "航空零部件制造需要强化批次、工序、检验记录和问题追溯链路。",
+            priority: "高",
+            capability: "质量追溯与数据治理"
+          },
+          {
+            id: "yanliang-need-3",
+            category: "数字化规划",
+            description: "需要面向阎良区航空制造企业共性需求形成数字化建设路线图和分阶段实施包。",
+            priority: "中",
+            capability: "数字化诊断与蓝图规划"
+          }
+        ],
+        conclusion: "阎良区航空制造企业样本显示，设备联网、质量追溯和生产执行协同是优先调研方向，可与现有设备采集、MES/MOM和数字化诊断能力形成匹配。"
+      }
+    ]
+  };
+}
+
+function isYanliangCompany(company: ResearchCompany) {
+  const text = `${company.name} ${company.region} ${company.notes}`;
+  return text.includes("阎良") || text.includes("航空基地") || text.includes("航空城") || text.includes("西飞") || text.includes("603所") || text.includes("630所") || text.includes("623所") || text.includes("一飞院") || text.includes("试飞院") || text.includes("强度所");
+}
+
+function canonicalCompanyName(name: string) {
+  return name
+    .replace(/（.*?）/g, "")
+    .replace(/\(.*?\)/g, "")
+    .replace(/有限责任公司/g, "有限公司")
+    .replace(/股份有限公司/g, "股份公司")
+    .replace(/\s+/g, "")
+    .trim();
+}
+
+function inferCompanyType(company: ResearchCompany) {
+  if (company.scale.includes("大型")) return "链主/核心企业";
+  if (company.scale.includes("科技型")) return "科技型中小企业";
+  if (company.scale.includes("成长")) return "成长型企业";
+  return company.status === "已完成" ? "已调研企业" : "待分型企业";
+}
+
+function inferChainPosition(company: ResearchCompany) {
+  const text = `${company.industry} ${company.notes}`;
+  if (text.includes("整机") || text.includes("总装") || text.includes("西飞")) return "整机总装/系统集成";
+  if (text.includes("研发设计") || text.includes("总体设计") || text.includes("一飞院") || text.includes("603所")) return "研发设计/总体设计";
+  if (text.includes("强度") || text.includes("623所")) return "试验验证/强度验证";
+  if (text.includes("试飞") || text.includes("适航") || text.includes("630所")) return "试飞鉴定/适航验证";
+  if (text.includes("数据中心") || text.includes("秦创原") || text.includes("实验室") || text.includes("学院")) return "创新平台/产业服务";
+  if (text.includes("材料") || text.includes("合金") || text.includes("复合")) return "关键材料/材料配套";
+  if (text.includes("无人机") || text.includes("低空")) return "低空经济/无人机";
+  if (text.includes("动力")) return "动力系统/动力部件";
+  if (text.includes("零部件") || text.includes("机械") || text.includes("加工")) return "零部件/配套制造";
+  if (text.includes("食品") || text.includes("羊乳")) return "特色食品全产业链";
+  return "产业链位置待补充";
+}
+
+function buildInsights(state: AppState) {
+  const needs = state.records.flatMap((record) => record.needs);
+  const industryData = countBy(state.companies.map((company) => company.industry || "未分类"));
+  const statusData = countBy(state.companies.map((company) => company.status));
+  const companyTypeData = countBy(state.companies.map((company) => company.companyType || "未分类")).sort((a, b) => b.value - a.value).slice(0, 8);
+  const chainPositionData = countBy(state.companies.map((company) => company.chainPosition || "未分类")).sort((a, b) => b.value - a.value).slice(0, 10);
+  const categoryData = countBy(needs.map((need) => need.category)).sort((a, b) => b.value - a.value).slice(0, 6);
+  const capabilityHits = countBy(needs.map((need) => need.capability)).sort((a, b) => b.value - a.value);
+  const topChain = chainPositionData.find((item) => !item.name.includes("待补充") && item.name !== "未分类")?.name ?? "产业链位置待补充";
+  const chainSuggestions = [
+    `从产业链位置看，当前样本最多集中在“${topChain}”，调研问题应围绕该环节的共性业务流程展开。`,
+    "链主企业重点看供应链协同、质量体系贯通、产能计划和生态数据标准；配套企业重点看订单协同、工艺过程透明、质量追溯和成本核算。",
+    "关键材料和特种工艺企业要重点关注研发试制、批次一致性、检验数据沉淀、设备工艺参数管理。",
+    "低空经济/无人机企业处在新赛道，除生产制造外，还要关注研发项目管理、试飞/测试数据、售后运维和政策申报。"
+  ];
+  const suggestions = [
+    state.companies.some((company) => company.status === "待调研") ? "优先把待调研企业按行业和规模分组，先覆盖样本代表性强的企业。" : "当前企业已形成一定调研覆盖，可以开始沉淀区域共通需求。",
+    categoryData[0] ? `当前最高频需求是“${categoryData[0].name}”，建议设计标准化访谈追问和解决方案包。` : "调研记录还不够，建议每家企业至少沉淀3条结构化需求。",
+    capabilityHits[0] ? `能力匹配最多的是“${capabilityHits[0].name}”，可作为区域切入的优先产品化能力。` : "建议先完善能力库关键词，提升需求与能力的自动匹配效果。",
+    "每次访谈后当天完成录音、纪要、需求标签和下一步动作，避免调研信息散落。"
+  ];
+  return { needs, industryData, statusData, companyTypeData, chainPositionData, categoryData, capabilityHits, suggestions, chainSuggestions };
+}
+
+function buildConclusion(state: AppState, insights: ReturnType<typeof buildInsights>) {
+  const topNeed = insights.categoryData[0]?.name ?? "暂无明确高频需求";
+  const topCapability = insights.capabilityHits[0]?.name ?? "暂无明确能力匹配";
+  return [
+    `本区域已纳入 ${state.companies.length} 家制造企业，形成 ${state.records.length} 条调研记录，沉淀 ${insights.needs.length} 条结构化数字化需求。`,
+    `从当前样本看，高频需求集中在“${topNeed}”，说明区域企业在该方向存在共通改进空间。`,
+    `与现有能力匹配度最高的是“${topCapability}”，可作为后续方案设计、样板企业选择和区域推广的优先切入点。`,
+    "下一步建议继续补齐企业样本，按行业/规模分层访谈，并把高优先级需求转化为标准方案包、实施路径和投入产出假设。"
+  ].join("\n\n");
+}
+
+function buildChainStages(companies: ResearchCompany[]) {
+  const stages = [
+    { key: "design", name: "研发设计/总体论证", description: "一飞院等设计研究单位，承担总体方案、系统集成和型号研制源头" },
+    { key: "strength", name: "试验验证/强度鉴定", description: "强度、静力、疲劳、环境适应性和验证鉴定能力" },
+    { key: "materials", name: "关键材料/特种工艺", description: "合金、复合材料、锻造、旋压、陶瓷基等上游能力" },
+    { key: "parts", name: "零部件/部附件", description: "零件加工、部附件、功能件和本地供应商配套" },
+    { key: "structures", name: "结构件/大部件", description: "金属结构件、部段制造、自动钻铆等关键制造环节" },
+    { key: "assembly", name: "整机总装/系统集成", description: "链主企业、总装集成、供应链和质量标准牵引" },
+    { key: "flight", name: "试飞/适航/检测", description: "试飞院等承担飞行试验、适航验证、检测评价" },
+    { key: "maintenance", name: "维修保障/航材服务", description: "航材保障、维修制造、后市场服务和运行支持" },
+    { key: "low-altitude", name: "低空经济/无人机", description: "无人机整机、感知系统、测试与运营新场景" },
+    { key: "platform", name: "创新平台/教学培训", description: "秦创原、航空大数据中心、实验室、院校等产业支撑平台" }
+  ];
+
+  const stageKeyOf = (company: ResearchCompany) => {
+    const text = `${company.chainPosition} ${company.industry} ${company.companyType} ${company.name}`;
+    if (text.includes("研发设计") || text.includes("总体设计") || text.includes("设计研究") || text.includes("一飞院")) return "design";
+    if (text.includes("试飞") || text.includes("适航") || text.includes("检测") || text.includes("试飞院")) return "flight";
+    if (text.includes("强度") || text.includes("试验验证") || text.includes("强度所")) return "strength";
+    if (text.includes("材料") || text.includes("合金") || text.includes("复合") || text.includes("锻件") || text.includes("成形") || text.includes("工艺")) return "materials";
+    if (text.includes("结构件") || text.includes("大部件") || text.includes("部段") || text.includes("智能工艺装备")) return "structures";
+    if (text.includes("零部件") || text.includes("部附件") || text.includes("精密加工") || text.includes("功能部件") || text.includes("配套")) return "parts";
+    if (text.includes("整机") || text.includes("总装") || text.includes("系统集成") || text.includes("西飞")) return "assembly";
+    if (text.includes("维修") || text.includes("航材") || text.includes("保障")) return "maintenance";
+    if (text.includes("低空") || text.includes("无人机") || text.includes("感知")) return "low-altitude";
+    if (text.includes("创新平台") || text.includes("孵化") || text.includes("数据平台") || text.includes("教学培训") || text.includes("人才") || text.includes("实验室")) return "platform";
+    return "parts";
+  };
+
+  return stages.map((stage) => ({
+    ...stage,
+    companies: companies.filter((company) => stageKeyOf(company) === stage.key)
+  }));
+}
+
+function buildCoreRelations(companies: ResearchCompany[]) {
+  const by = (predicate: (company: ResearchCompany) => boolean) => companies.filter(predicate);
+  const design = by((company) => company.chainPosition.includes("研发设计") || company.name.includes("一飞院"));
+  const manufacturing = by((company) => company.chainPosition.includes("整机总装") || company.chainPosition.includes("结构件") || company.chainPosition.includes("零部件"));
+  const strength = by((company) => company.chainPosition.includes("强度") || company.chainPosition.includes("材料") || company.name.includes("强度所"));
+  const flight = by((company) => company.chainPosition.includes("试飞") || company.chainPosition.includes("适航") || company.name.includes("试飞院"));
+  const platform = by((company) => company.companyType.includes("平台") || company.chainPosition.includes("平台"));
+
+  return [
+    {
+      name: "一飞院",
+      role: "设计源头/总体论证",
+      relations: [
+        { label: "设计输入与型号需求", targets: design },
+        { label: "设计发放到制造", targets: manufacturing },
+        { label: "试验验证反馈", targets: strength },
+        { label: "试飞问题回传", targets: flight }
+      ]
+    },
+    {
+      name: "西飞",
+      role: "整机总装/链主牵引",
+      relations: [
+        { label: "承接设计与工艺转化", targets: design },
+        { label: "供应商/配套制造协同", targets: manufacturing },
+        { label: "质量与强度验证闭环", targets: strength },
+        { label: "交付试飞与问题归零", targets: flight }
+      ]
+    },
+    {
+      name: "试飞院",
+      role: "飞行试验/适航鉴定",
+      relations: [
+        { label: "试飞任务与型号状态", targets: design },
+        { label: "总装交付与试飞准备", targets: manufacturing },
+        { label: "飞参/遥测/问题闭环", targets: flight },
+        { label: "数据回传与知识沉淀", targets: platform }
+      ]
+    },
+    {
+      name: "强度所",
+      role: "强度试验/验证鉴定",
+      relations: [
+        { label: "试验需求来自设计", targets: design },
+        { label: "试件与制造过程关联", targets: manufacturing },
+        { label: "材料/结构验证数据", targets: strength },
+        { label: "验证结论回写型号", targets: design }
+      ]
+    }
+  ];
+}
+
+function policyMatchesCompany(policy: PolicySupport, company: ResearchCompany) {
+  const typeMatched = !policy.appliesToTypes.length || policy.appliesToTypes.some((type) => company.companyType.includes(type) || company.scale.includes(type));
+  const positionMatched = !policy.appliesToPositions.length || policy.appliesToPositions.some((position) => company.chainPosition.includes(position) || company.industry.includes(position));
+  return typeMatched && positionMatched;
+}
+
+function buildTenderSignals(company: ResearchCompany): TenderSignal[] {
+  const baseKeywords = ["MES/MOM", "工业互联网", "质量追溯", "设备联网", "数据平台"];
+  const positionKeywords = company.chainPosition.includes("研发") || company.chainPosition.includes("设计")
+    ? ["研发项目管理", "型号数据管理", "知识库"]
+    : company.chainPosition.includes("试飞") || company.chainPosition.includes("强度")
+      ? ["试验数据管理", "检测平台", "问题闭环"]
+      : company.chainPosition.includes("整机") || company.companyType.includes("链主")
+        ? ["供应链协同", "供应商质量管理", "产业链协同平台"]
+        : ["车间执行", "质量检验", "设备采集"];
+  const keywords = Array.from(new Set([...positionKeywords, ...baseKeywords])).slice(0, 6);
+
+  return [
+    {
+      id: `${company.id}-tender-watch`,
+      title: `${company.name} 数字化相关招标/采购线索`,
+      source: "待接入公开招采平台",
+      date: "待更新",
+      status: "待手动更新",
+      relevance: `建议按“${company.name}”及“${keywords.join("、")}”建立检索条件，沉淀标题、发布时间、来源链接、预算金额和数字化相关性。`
+    },
+    {
+      id: `${company.id}-tender-question`,
+      title: "调研时需要核实的近期采购方向",
+      source: "调研问题生成",
+      date: "访谈时确认",
+      status: "待访谈确认",
+      relevance: `重点询问近一年是否关注或发布过${keywords.slice(0, 4).join("、")}相关项目，以及是否可结合政策补贴降低立项门槛。`
+    }
+  ];
+}
+
+function defaultPolicySupports(): PolicySupport[] {
+  return [
+    {
+      id: "tech-upgrade",
+      name: "企业技术改造奖补",
+      level: "西安市级先进制造业政策",
+      amount: "最高2000万元",
+      appliesToTypes: ["链主", "支柱", "重点", "入区", "科技型"],
+      appliesToPositions: ["零部件", "整机", "材料", "专用设备", "无人机"],
+      serviceMatches: ["设备联网", "MES/MOM", "工业互联网", "数字化车间"],
+      decisionValue: "可把数字化项目包装为技改项目，补贴预期能够降低企业一次性投入压力。"
+    },
+    {
+      id: "rd-subsidy",
+      name: "研发投入后补助",
+      level: "市级/省级研发政策",
+      amount: "按研发投入比例补助，单户最高数百万元",
+      appliesToTypes: ["科研", "链主", "重点", "科技型", "创新平台"],
+      appliesToPositions: ["研发设计", "强度", "试飞", "材料", "低空"],
+      serviceMatches: ["研发项目管理", "试验数据管理", "知识库", "数字孪生"],
+      decisionValue: "适合把研发、试验、设计数据治理类项目纳入研发费用和技术攻关预算。"
+    },
+    {
+      id: "specialized",
+      name: "专精特新/小巨人奖补",
+      level: "陕西省/西安市/航空基地",
+      amount: "20万-30万元及区级配套",
+      appliesToTypes: ["科技型", "成长型", "重点"],
+      appliesToPositions: ["零部件", "精密加工", "材料", "部附件"],
+      serviceMatches: ["数字化诊断", "管理体系提升", "质量追溯", "数据治理"],
+      decisionValue: "可把数字化诊断与管理提升作为专精特新申报和成长培育的支撑材料。"
+    },
+    {
+      id: "industrial-chain",
+      name: "产业集群招商与链主配套支持",
+      level: "先进制造业强市政策",
+      amount: "链主引进配套企业累计最高5000万元",
+      appliesToTypes: ["链主"],
+      appliesToPositions: ["整机总装", "系统集成"],
+      serviceMatches: ["供应链协同", "供应商质量管理", "产业链数据平台"],
+      decisionValue: "适合链主牵引配套企业共同建设协同平台，把单企项目升级为产业链项目。"
+    },
+    {
+      id: "industrial-internet",
+      name: "智能制造/工业互联网试点示范",
+      level: "国家级资金配套/市级奖励",
+      amount: "国家级示范、工业互联网试点等可获奖励或配套",
+      appliesToTypes: ["链主", "支柱", "重点", "平台"],
+      appliesToPositions: ["整机", "零部件", "材料", "平台", "数据平台"],
+      serviceMatches: ["工业互联网平台", "设备共享", "数据中台", "质量追溯"],
+      decisionValue: "可用示范试点目标提升项目战略优先级，减少客户只按成本采购评估的阻力。"
+    },
+    {
+      id: "big-aircraft",
+      name: "大飞机产业专项与配套能力建设",
+      level: "航空基地特色政策",
+      amount: "大飞机产业基金、73+N扩产项目清单动态更新",
+      appliesToTypes: ["链主", "重点", "入区"],
+      appliesToPositions: ["整机", "零部件", "部附件", "结构件", "试飞", "强度"],
+      serviceMatches: ["大飞机供应链协同", "质量证据链", "试验试飞数据闭环"],
+      decisionValue: "适合围绕C919/大飞机配套能力建设，把数字化服务嵌入扩产、质量和交付能力提升。"
+    }
+  ];
+}
+
+function generateQuestions(company: ResearchCompany, templates: QuestionTemplate[]) {
+  const matched = templates.filter((template) => templateMatchesCompany(template, company));
+  const fallback = templates.filter((template) => !template.appliesToTypes.length && !template.appliesToPositions.length);
+  return Array.from(new Set([...(matched.length ? matched : fallback), ...fallback].map((template) => template.question))).slice(0, 12);
+}
+
+function templateMatchesCompany(template: QuestionTemplate, company: ResearchCompany) {
+  const typeMatched = !template.appliesToTypes.length || template.appliesToTypes.some((type) => company.companyType.includes(type) || type.includes(company.companyType));
+  const positionMatched = !template.appliesToPositions.length || template.appliesToPositions.some((position) => company.chainPosition.includes(position) || position.includes(company.chainPosition));
+  return typeMatched && positionMatched;
+}
+
+function defaultQuestionTemplates(): QuestionTemplate[] {
+  return [
+    template("基础画像", [], [], "企业当前核心产品、主要客户、生产组织模式和近期经营压力是什么？"),
+    template("基础画像", [], [], "当前已建设哪些系统（ERP、MES、WMS、QMS、SCADA、数据平台），使用效果和主要问题是什么？"),
+    template("研发设计", ["科研"], ["研发设计", "总体设计"], "型号研制过程中，需求、构型、技术状态、设计变更和试验反馈如何管理？"),
+    template("研发设计", ["科研"], ["研发设计", "总体设计"], "设计、制造、试验、供应商之间的数据如何贯通？是否存在重复录入、版本不一致或证据链不完整问题？"),
+    template("试验验证", ["科研"], ["强度", "试验验证"], "试验任务计划、试验资源、试件状态、传感器数据和报告结论目前如何管理？"),
+    template("试验验证", ["科研"], ["强度", "试验验证"], "虚拟仿真、实测数据、试验报告和型号知识是否能形成可复用的数据资产？"),
+    template("试飞鉴定", ["试飞", "科研"], ["试飞", "适航"], "试飞任务计划、风险识别、飞参/遥测数据、问题闭环和适航符合性证据如何管理？"),
+    template("试飞鉴定", ["试飞", "科研"], ["试飞", "适航"], "试飞数据如何回传设计、制造和供应商环节？目前有哪些协同和数据治理难点？"),
+    template("平台服务", ["平台"], ["平台", "孵化", "教学培训"], "平台服务了哪些企业？是否沉淀了企业画像、设备共享、融资政策、人才服务和项目孵化数据？"),
+    template("链主协同", ["链主"], ["整机总装", "系统集成"], "你们对本地配套企业的交付、质量、数据标准和协同节奏有哪些统一要求？"),
+    template("链主协同", ["链主"], ["整机总装", "系统集成"], "供应商协同、质量问题闭环、产能计划和项目交付目前通过什么系统或机制管理？"),
+    template("链主协同", ["链主"], ["整机总装", "系统集成"], "是否有建设产业链协同平台、供应商质量平台或链上数据标准的计划？"),
+    template("配套制造", [], ["零部件", "精密加工", "部附件", "配套"], "订单来源主要来自哪些链主或一级配套？订单变更、交付节点和质量要求如何传递？"),
+    template("配套制造", [], ["零部件", "精密加工", "部附件", "配套"], "工序进度、设备状态、检验结果和返工信息是否能够实时采集和追溯？"),
+    template("配套制造", [], ["零部件", "精密加工", "部附件", "配套"], "当前成本核算、工时统计、设备利用率和交付风险预警有哪些痛点？"),
+    template("材料工艺", [], ["材料", "合金", "复合", "锻件", "成形"], "研发试制、配方/工艺版本、批次一致性和检验数据如何管理？"),
+    template("材料工艺", [], ["材料", "合金", "复合", "锻件", "成形"], "工艺参数、实验数据、客户认证资料是否能形成可追溯的数据链路？"),
+    template("低空经济", [], ["低空", "无人机"], "研发项目、试飞测试数据、批产准备和售后运维目前如何管理？"),
+    template("低空经济", [], ["低空", "无人机"], "是否存在围绕低空经济平台、测试平台、感知系统、调度平台的建设计划或政策申报需求？"),
+    template("招标线索", [], [], "近期是否发布或关注过MES、工业互联网、质量追溯、设备联网、检测平台、数据平台相关招标或采购？"),
+    template("机会判断", [], [], "如果只能优先解决一个数字化问题，企业最希望先解决什么？预算、周期、验收方式有什么约束？")
+  ];
+}
+
+function template(category: string, appliesToTypes: string[], appliesToPositions: string[], question: string): QuestionTemplate {
+  return { id: uid(), category, appliesToTypes, appliesToPositions, question };
+}
+
+function emptyTemplate(): QuestionTemplate {
+  return { id: "", category: "自定义问题", appliesToTypes: [], appliesToPositions: [], question: "" };
+}
+
+function splitTags(value: string) {
+  return value.split(/[、,，;；\s]+/).map((item) => item.trim()).filter(Boolean);
+}
+
+function matchCapability(text: string, capabilities: Capability[]) {
+  const scored = capabilities.map((capability) => ({
+    capability,
+    score: capability.keywords.reduce((sum, keyword) => sum + (text.toLowerCase().includes(keyword.toLowerCase()) ? 1 : 0), 0)
+  })).sort((a, b) => b.score - a.score);
+  return scored[0]?.capability ?? capabilities[0];
+}
+
+function countBy(values: string[]) {
+  const map = new Map<string, number>();
+  values.forEach((value) => map.set(value, (map.get(value) ?? 0) + 1));
+  return Array.from(map, ([name, value]) => ({ name, value }));
+}
+
+function emptyCompany(): ResearchCompany {
+  return { id: "", name: "", region: "", industry: "", companyType: "", chainPosition: "", scale: "", contact: "", status: "待调研", maturity: 30, notes: "" };
+}
+
+function yanliangCompany(name: string, industry: string, companyType: string, chainPosition: string, scale: string, maturity: number, notes: string): ResearchCompany {
+  return {
+    id: uid(),
+    name,
+    region: "西安市阎良区 / 西安航空基地",
+    industry,
+    companyType,
+    chainPosition,
+    scale,
+    contact: "待调研补充",
+    status: "待调研",
+    maturity,
+    notes
+  };
+}
+
+function stringCell(row: Record<string, unknown>, keys: string[]) {
+  const key = keys.find((item) => row[item] !== undefined);
+  return key ? String(row[key] ?? "").trim() : "";
+}
+
+function uid() {
+  return Math.random().toString(36).slice(2, 10);
+}
