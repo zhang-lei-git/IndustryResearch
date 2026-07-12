@@ -1,5 +1,6 @@
 export type CompanyStatus = "待调研" | "已预约" | "调研中" | "已完成";
 export type NeedPriority = "高" | "中" | "低";
+export type NeedStatus = "待确认" | "已确认" | "已排除";
 
 export type ResearchCompany = {
   id: string;
@@ -32,6 +33,7 @@ export type NeedItem = {
   description: string;
   priority: NeedPriority;
   capability: string;
+  status: NeedStatus;
 };
 
 export type ResearchRecord = {

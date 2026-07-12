@@ -1439,6 +1439,17 @@ label {
   font-weight: 700;
 }
 
+.need-with-action {
+  display: grid;
+  gap: 8px;
+}
+
+.need-with-action label {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  padding: 0 4px;
+}
+
 .rank-row,
 .capability-row,
 .advice {

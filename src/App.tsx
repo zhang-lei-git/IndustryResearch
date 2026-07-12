@@ -40,6 +40,7 @@ import type {
   IntelligenceItem,
   NeedItem,
   NeedPriority,
+  NeedStatus,
   PolicyRecord,
   QuestionTemplate,
   ResearchCompany,
@@ -254,7 +255,7 @@ export function App() {
         {active === "policies" ? <PolicyMatch state={state} setState={updateState} /> : null}
         {active === "plans" ? <Plans state={state} setState={updateState} /> : null}
         {active === "records" ? <Records state={state} setState={updateState} selectedCompanyId={selectedCompanyId} /> : null}
-        {active === "needs" ? <Needs state={state} /> : null}
+        {active === "needs" ? <Needs state={state} setState={updateState} /> : null}
         {active === "advice" ? <Advice state={state} insights={insights} /> : null}
         {active === "knowledge" ? <KnowledgeAssets state={state} /> : null}
       </main>
@@ -1148,7 +1149,8 @@ function Records({ state, setState, selectedCompanyId }: { state: AppState; setS
     category: "生产执行",
     description: "",
     priority: "中",
-    capability: "MES/MOM实施落地"
+    capability: "MES/MOM实施落地",
+    status: "待确认"
   });
   const [needs, setNeeds] = useState<NeedItem[]>([]);
 
@@ -1221,12 +1223,24 @@ function Records({ state, setState, selectedCompanyId }: { state: AppState; setS
   );
 }
 
-function Needs({ state }: { state: AppState }) {
-  const allNeeds = state.records.flatMap((record) => record.needs.map((need) => ({ ...need, company: state.companies.find((company) => company.id === record.companyId)?.name ?? "-" })));
+function Needs({ state, setState }: { state: AppState; setState: (state: AppState) => void }) {
+  const allNeeds = state.records.flatMap((record) => record.needs.map((need) => ({ ...need, recordId: record.id, company: state.companies.find((company) => company.id === record.companyId)?.name ?? "-" })));
+
+  function updateNeedStatus(recordId: string, needId: string, status: NeedStatus) {
+    setState({
+      ...state,
+      records: state.records.map((record) => record.id === recordId ? {
+        ...record,
+        needs: record.needs.map((need) => need.id === needId ? { ...need, status } : need)
+      } : record)
+    });
+  }
+
   return (
-    <Panel title="需求归纳与能力匹配">
+    <Panel title="需求归纳与确认">
       <div className="need-board">
-        {allNeeds.map((need) => <NeedCard key={`${need.company}-${need.id}`} need={need} company={need.company} />)}
+        {allNeeds.map((need) => <div className="need-with-action" key={`${need.company}-${need.id}`}><NeedCard need={need} company={need.company} /><label>确认状态<select value={need.status} onChange={(event) => updateNeedStatus(need.recordId, need.id, event.target.value as NeedStatus)}><option>待确认</option><option>已确认</option><option>已排除</option></select></label></div>)}
+        {!allNeeds.length ? <div className="empty-stage">暂无来自调研记录的需求。完成访谈记录并提取需求后，会在这里进行确认、排除和归纳。</div> : null}
       </div>
     </Panel>
   );
@@ -1308,7 +1322,7 @@ function RecordCard({ record, company }: { record: ResearchRecord; company?: Res
 }
 
 function NeedCard({ need, company }: { need: NeedItem; company?: string }) {
-  return <div className="need-card"><div><strong>{need.category}</strong>{company ? <span>{company}</span> : null}</div><p>{need.description}</p><footer><em>{need.priority}</em><span>{need.capability}</span></footer></div>;
+  return <div className="need-card"><div><strong>{need.category}</strong>{company ? <span>{company}</span> : null}</div><p>{need.description}</p><footer><em>{need.priority}</em><span>{need.capability}</span><span>{need.status}</span></footer></div>;
 }
 
 function usePersistentState() {
@@ -1375,7 +1389,11 @@ function mergeYanliangCompanies(state: AppState): AppState {
     .map((plan) => ({ ...plan, workspaceId: plan.workspaceId ?? workspaceByCompanyId.get(plan.companyId) ?? YANLIANG_WORKSPACE_ID }));
   const records = (state.records ?? [])
     .filter((record) => workspaceByCompanyId.has(record.companyId))
-    .map((record) => ({ ...record, workspaceId: record.workspaceId ?? workspaceByCompanyId.get(record.companyId) ?? YANLIANG_WORKSPACE_ID }));
+    .map((record) => ({
+      ...record,
+      workspaceId: record.workspaceId ?? workspaceByCompanyId.get(record.companyId) ?? YANLIANG_WORKSPACE_ID,
+      needs: (record.needs ?? []).map((need) => ({ ...need, status: need.status ?? "待确认" }))
+    }));
   const sampleCompany = companies.find((company) => company.name === "西安泽达航空制造有限责任公司") ?? companies.find((company) => company.region.includes("阎良"));
   if (!sampleCompany || records.some((record) => record.id === "yanliang-sample-record")) {
     return { ...state, dataVersion: STATE_VERSION, workspaces, activeWorkspaceId, topics, hypotheses, policies, intelligence, companies, plans, records, questionTemplates };
@@ -1419,21 +1437,24 @@ function mergeYanliangCompanies(state: AppState): AppState {
             category: "设备数据",
             description: "希望将关键加工设备、检验设备和工序状态接入统一数据平台，减少人工统计。",
             priority: "高",
-            capability: "设备联网与工业数据采集"
+            capability: "设备联网与工业数据采集",
+            status: "待确认"
           },
           {
             id: "yanliang-need-2",
             category: "质量追溯",
             description: "航空零部件制造需要强化批次、工序、检验记录和问题追溯链路。",
             priority: "高",
-            capability: "质量追溯与数据治理"
+            capability: "质量追溯与数据治理",
+            status: "待确认"
           },
           {
             id: "yanliang-need-3",
             category: "数字化规划",
             description: "需要面向阎良区航空制造企业共性需求形成数字化建设路线图和分阶段实施包。",
             priority: "中",
-            capability: "数字化诊断与蓝图规划"
+            capability: "数字化诊断与蓝图规划",
+            status: "待确认"
           }
         ],
         conclusion: "阎良区航空制造企业样本显示，设备联网、质量追溯和生产执行协同是优先调研方向，可与现有设备采集、MES/MOM和数字化诊断能力形成匹配。"
