@@ -90,7 +90,7 @@ export type ResearchHypothesis = {
   status: "待验证" | "已有支持证据" | "存在反例" | "暂不确定";
 };
 
-export type PolicySupport = {
+export type PolicyRecord = {
   id: string;
   name: string;
   level: string;
@@ -99,6 +99,12 @@ export type PolicySupport = {
   appliesToPositions: string[];
   serviceMatches: string[];
   decisionValue: string;
+  sourceUrl: string;
+  publishedAt: string;
+  validUntil: string;
+  status: "有效" | "待核实" | "已失效";
+  version: number;
+  lastUpdatedAt: string;
 };
 
 export type TenderSignal = {
@@ -119,6 +125,7 @@ export type AppState = {
   companies: ResearchCompany[];
   plans: ResearchPlan[];
   records: ResearchRecord[];
+  policies: PolicyRecord[];
   capabilities: Capability[];
   questionTemplates: QuestionTemplate[];
 };

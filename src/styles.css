@@ -1029,6 +1029,16 @@ label {
   padding: 14px;
 }
 
+.policy-card {
+  width: 100%;
+  text-align: left;
+}
+
+.muted-text {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .core-node-head,
 .policy-head {
   display: flex;

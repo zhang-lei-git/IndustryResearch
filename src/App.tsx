@@ -39,7 +39,7 @@ import type {
   CompanyStatus,
   NeedItem,
   NeedPriority,
-  PolicySupport,
+  PolicyRecord,
   QuestionTemplate,
   ResearchCompany,
   ResearchHypothesis,
@@ -49,12 +49,12 @@ import type {
   TenderSignal,
   Workspace
 } from "./domain/types";
+import { policyMatchesCompany } from "./domain/policy";
 import { applyStateVersion, parseStoredState, serializeState, STATE_VERSION } from "./state/persistence";
 
 const STORE_KEY = "manufacturing-research-system:v1";
 const YANLIANG_WORKSPACE_ID = "workspace-yanliang-aerospace";
 const COLORS = ["#2563eb", "#14b8a6", "#f59e0b", "#ef4444", "#7c3aed", "#0f766e"];
-const policySupports = defaultPolicySupports();
 const defaultWorkspaces: Workspace[] = [
   {
     id: YANLIANG_WORKSPACE_ID,
@@ -75,6 +75,7 @@ const initialState: AppState = {
   companies: [],
   plans: [],
   records: [],
+  policies: defaultPolicyRecords(),
   questionTemplates: defaultQuestionTemplates(),
   capabilities: [
     {
@@ -246,7 +247,7 @@ export function App() {
         {active === "companies" ? <Companies state={state} setState={updateState} selectedCompanyId={selectedCompanyId} setSelectedCompanyId={setSelectedCompanyId} openCompanyProfile={openCompanyProfile} /> : null}
         {active === "chain" ? <IndustryChainMap state={state} openCompanyProfile={openCompanyProfile} /> : null}
         {active === "questions" ? <QuestionGenerator state={state} setState={updateState} selectedCompanyId={selectedCompanyId} setSelectedCompanyId={setSelectedCompanyId} /> : null}
-        {active === "policies" ? <PolicyMatch state={state} /> : null}
+        {active === "policies" ? <PolicyMatch state={state} setState={updateState} /> : null}
         {active === "plans" ? <Plans state={state} setState={updateState} /> : null}
         {active === "records" ? <Records state={state} setState={updateState} selectedCompanyId={selectedCompanyId} /> : null}
         {active === "needs" ? <Needs state={state} /> : null}
@@ -258,7 +259,7 @@ export function App() {
         <CompanyProfileDrawer
           key={profileCompany.id}
           company={profileCompany}
-          policies={policySupports.filter((policy) => policyMatchesCompany(policy, profileCompany))}
+          policies={state.policies.filter((policy) => policyMatchesCompany(policy, profileCompany))}
           tenders={buildTenderSignals(profileCompany)}
           onClose={() => setProfileCompanyId(null)}
           onSave={saveProfileCompany}
@@ -591,7 +592,7 @@ function Companies({ state, setState, selectedCompanyId, setSelectedCompanyId, o
   );
 }
 
-function CompanyProfileDrawer({ company, policies, tenders, onClose, onSave }: { company: ResearchCompany; policies: PolicySupport[]; tenders: TenderSignal[]; onClose: () => void; onSave: (company: ResearchCompany) => void }) {
+function CompanyProfileDrawer({ company, policies, tenders, onClose, onSave }: { company: ResearchCompany; policies: PolicyRecord[]; tenders: TenderSignal[]; onClose: () => void; onSave: (company: ResearchCompany) => void }) {
   const [mode, setMode] = useState<"detail" | "edit">("detail");
   const [draft, setDraft] = useState(company);
 
@@ -624,7 +625,7 @@ function CompanyProfileDrawer({ company, policies, tenders, onClose, onSave }: {
   );
 }
 
-function CompanyDetail({ company, policies, tenders, onEdit }: { company: ResearchCompany; policies: PolicySupport[]; tenders: TenderSignal[]; onEdit: () => void }) {
+function CompanyDetail({ company, policies, tenders, onEdit }: { company: ResearchCompany; policies: PolicyRecord[]; tenders: TenderSignal[]; onEdit: () => void }) {
   return (
     <div className="drawer-content">
       <div className="detail-grid">
@@ -809,28 +810,49 @@ function IndustryChainMap({ state, openCompanyProfile }: { state: AppState; open
   );
 }
 
-function PolicyMatch({ state }: { state: AppState }) {
-  const matches = policySupports.map((policy) => ({
+function PolicyMatch({ state, setState }: { state: AppState; setState: (state: AppState) => void }) {
+  const [draft, setDraft] = useState<PolicyRecord>(() => state.policies[0] ?? emptyPolicy());
+  const matches = state.policies.map((policy) => ({
     policy,
     companies: state.companies.filter((company) => policyMatchesCompany(policy, company))
   }));
+
+  function selectPolicy(policy: PolicyRecord) {
+    setDraft(policy);
+  }
+
+  function savePolicy() {
+    if (!draft.name.trim()) return;
+    const updated = { ...draft, id: draft.id || uid(), version: draft.version || 1, lastUpdatedAt: new Date().toISOString().slice(0, 10) };
+    const exists = state.policies.some((policy) => policy.id === updated.id);
+    setState({
+      ...state,
+      policies: exists ? state.policies.map((policy) => policy.id === updated.id ? updated : policy) : [...state.policies, updated]
+    });
+    setDraft(updated);
+  }
+
+  function createPolicy() {
+    setDraft(emptyPolicy());
+  }
+
   return (
     <div className="page-grid">
       <section className="metric-grid">
-        <Metric icon={<Scale />} label="政策条目" value={policySupports.length} />
+        <Metric icon={<Scale />} label="政策条目" value={state.policies.length} />
         <Metric icon={<Target />} label="可匹配企业" value={new Set(matches.flatMap((item) => item.companies.map((company) => company.id))).size} />
-        <Metric icon={<Sparkles />} label="服务匹配点" value={new Set(policySupports.flatMap((policy) => policy.serviceMatches)).size} />
+        <Metric icon={<Sparkles />} label="服务匹配点" value={new Set(state.policies.flatMap((policy) => policy.serviceMatches)).size} />
         <Metric icon={<Building2 />} label="企业池" value={state.companies.length} />
       </section>
       <section className="grid two">
-        <Panel title="政策扶持与数字化服务匹配">
+        <Panel title="政策库与企业匹配" action={<button className="button secondary" type="button" onClick={createPolicy}><Plus size={16} /> 新增政策</button>}>
           <div className="policy-list">
             {matches.map(({ policy, companies }) => (
-              <div className="policy-card" key={policy.id}>
+              <button className="policy-card" key={policy.id} type="button" onClick={() => selectPolicy(policy)}>
                 <div className="policy-head">
                   <div>
                     <strong>{policy.name}</strong>
-                    <span>{policy.level} / {policy.amount}</span>
+                    <span>{policy.level} / {policy.amount} / {policy.status}</span>
                   </div>
                   <em>{companies.length} 家匹配</em>
                 </div>
@@ -838,17 +860,25 @@ function PolicyMatch({ state }: { state: AppState }) {
                 <div className="policy-tags">
                   {policy.serviceMatches.map((item) => <span key={item}>{item}</span>)}
                 </div>
-              </div>
+              </button>
             ))}
           </div>
         </Panel>
-        <Panel title="降低决策门槛的调研追问">
-          <div className="advice-list">
-            <div className="advice"><Scale size={18} /><span>企业是否已有技改、智能制造、工业互联网、专精特新、高企、研发投入补助等申报计划？</span></div>
-            <div className="advice"><Scale size={18} /><span>项目是否可拆成“诊断规划 + 小范围试点 + 技改设备/软件投入”三段，降低首期预算压力？</span></div>
-            <div className="advice"><Scale size={18} /><span>若政策补贴覆盖硬件、软件、研发投入或示范试点，客户内部决策可从“成本项”转成“政策窗口期项目”。</span></div>
-            <div className="advice"><Scale size={18} /><span>对链主和平台单位，重点问是否有带动配套企业、设备共享、产业链协同和数据平台的专项资金机会。</span></div>
+        <Panel title={draft.id ? "维护政策版本与匹配条件" : "新增政策"}>
+          <div className="form-grid">
+            <Field label="政策名称" value={draft.name} onChange={(name) => setDraft({ ...draft, name })} />
+            <Field label="政策层级" value={draft.level} onChange={(level) => setDraft({ ...draft, level })} />
+            <Field label="支持额度/方式" value={draft.amount} onChange={(amount) => setDraft({ ...draft, amount })} />
+            <label>有效状态<select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as PolicyRecord["status"] })}><option>有效</option><option>待核实</option><option>已失效</option></select></label>
+            <Field label="发布日期" type="date" value={draft.publishedAt} onChange={(publishedAt) => setDraft({ ...draft, publishedAt })} />
+            <Field label="有效截止日" type="date" value={draft.validUntil} onChange={(validUntil) => setDraft({ ...draft, validUntil })} />
+            <Field label="官方来源链接" value={draft.sourceUrl} onChange={(sourceUrl) => setDraft({ ...draft, sourceUrl })} />
+            <Field label="适用企业类型" value={draft.appliesToTypes.join("、")} onChange={(value) => setDraft({ ...draft, appliesToTypes: splitTags(value) })} />
+            <Field label="适用产业位置" value={draft.appliesToPositions.join("、")} onChange={(value) => setDraft({ ...draft, appliesToPositions: splitTags(value) })} />
+            <Field label="可匹配服务" value={draft.serviceMatches.join("、")} onChange={(value) => setDraft({ ...draft, serviceMatches: splitTags(value) })} />
           </div>
+          <label>政策对客户决策的作用<textarea value={draft.decisionValue} onChange={(event) => setDraft({ ...draft, decisionValue: event.target.value })} /></label>
+          <div className="drawer-actions-inline"><span className="muted-text">版本 {draft.version || 1} / 最近更新 {draft.lastUpdatedAt || "未保存"}</span><button className="button" type="button" onClick={savePolicy}><CheckCircle2 size={16} /> 保存并重新匹配</button></div>
         </Panel>
       </section>
     </div>
@@ -1214,6 +1244,11 @@ function mergeYanliangCompanies(state: AppState): AppState {
     : workspaces[0]?.id ?? YANLIANG_WORKSPACE_ID;
   const topics = state.topics?.length ? state.topics : defaultYanliangTopics();
   const hypotheses = state.hypotheses?.length ? state.hypotheses : defaultYanliangHypotheses();
+  const policies = state.policies?.length ? state.policies.map((policy) => ({
+    ...emptyPolicy(),
+    ...policy,
+    version: policy.version || 1
+  })) : defaultPolicyRecords();
   const questionTemplates = state.questionTemplates?.length ? state.questionTemplates : defaultQuestionTemplates();
   const reportCompanyMap = new Map(yanliangCompanies.map((company) => [canonicalCompanyName(company.name), company]));
   const normalizedCompanies = (state.companies ?? [])
@@ -1246,7 +1281,7 @@ function mergeYanliangCompanies(state: AppState): AppState {
     .map((record) => ({ ...record, workspaceId: record.workspaceId ?? workspaceByCompanyId.get(record.companyId) ?? YANLIANG_WORKSPACE_ID }));
   const sampleCompany = companies.find((company) => company.name === "西安泽达航空制造有限责任公司") ?? companies.find((company) => company.region.includes("阎良"));
   if (!sampleCompany || records.some((record) => record.id === "yanliang-sample-record")) {
-    return { ...state, dataVersion: STATE_VERSION, workspaces, activeWorkspaceId, topics, hypotheses, companies, plans, records, questionTemplates };
+    return { ...state, dataVersion: STATE_VERSION, workspaces, activeWorkspaceId, topics, hypotheses, policies, companies, plans, records, questionTemplates };
   }
   return {
     ...state,
@@ -1255,6 +1290,7 @@ function mergeYanliangCompanies(state: AppState): AppState {
     activeWorkspaceId,
     topics,
     hypotheses,
+    policies,
     questionTemplates,
     companies: companies.map((company) => company.id === sampleCompany.id ? { ...company, status: "调研中" } : company),
     plans: [
@@ -1525,12 +1561,6 @@ function buildCoreRelations(companies: ResearchCompany[]) {
   ];
 }
 
-function policyMatchesCompany(policy: PolicySupport, company: ResearchCompany) {
-  const typeMatched = !policy.appliesToTypes.length || policy.appliesToTypes.some((type) => company.companyType.includes(type) || company.scale.includes(type));
-  const positionMatched = !policy.appliesToPositions.length || policy.appliesToPositions.some((position) => company.chainPosition.includes(position) || company.industry.includes(position));
-  return typeMatched && positionMatched;
-}
-
 function buildTenderSignals(company: ResearchCompany): TenderSignal[] {
   const baseKeywords = ["MES/MOM", "工业互联网", "质量追溯", "设备联网", "数据平台"];
   const positionKeywords = company.chainPosition.includes("研发") || company.chainPosition.includes("设计")
@@ -1562,7 +1592,19 @@ function buildTenderSignals(company: ResearchCompany): TenderSignal[] {
   ];
 }
 
-function defaultPolicySupports(): PolicySupport[] {
+function defaultPolicyRecords(): PolicyRecord[] {
+  return defaultPolicySupports().map((policy) => ({
+    ...policy,
+    sourceUrl: "",
+    publishedAt: "",
+    validUntil: "",
+    status: "待核实",
+    version: 1,
+    lastUpdatedAt: ""
+  }));
+}
+
+function defaultPolicySupports(): Array<Omit<PolicyRecord, "sourceUrl" | "publishedAt" | "validUntil" | "status" | "version" | "lastUpdatedAt">> {
   return [
     {
       id: "tech-upgrade",
@@ -1693,6 +1735,25 @@ function countBy(values: string[]) {
 
 function emptyCompany(): ResearchCompany {
   return { id: "", workspaceId: YANLIANG_WORKSPACE_ID, name: "", region: "", industry: "", companyType: "", chainPosition: "", scale: "", contact: "", status: "待调研", maturity: 30, notes: "" };
+}
+
+function emptyPolicy(): PolicyRecord {
+  return {
+    id: "",
+    name: "",
+    level: "",
+    amount: "",
+    appliesToTypes: [],
+    appliesToPositions: [],
+    serviceMatches: [],
+    decisionValue: "",
+    sourceUrl: "",
+    publishedAt: "",
+    validUntil: "",
+    status: "待核实",
+    version: 1,
+    lastUpdatedAt: ""
+  };
 }
 
 function yanliangCompany(name: string, industry: string, companyType: string, chainPosition: string, scale: string, maturity: number, notes: string): ResearchCompany {

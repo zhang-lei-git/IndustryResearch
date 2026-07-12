@@ -26,6 +26,7 @@ describe("local state persistence", () => {
       companies: [],
       plans: [],
       records: [],
+      policies: [],
       capabilities: [],
       questionTemplates: []
     });
