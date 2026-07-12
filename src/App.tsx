@@ -7,6 +7,7 @@ import {
   FileAudio,
   FileSpreadsheet,
   Lightbulb,
+  MapPinned,
   Mic2,
   Plus,
   Scale,
@@ -37,6 +38,7 @@ type CompanyStatus = "待调研" | "已预约" | "调研中" | "已完成";
 type NeedPriority = "高" | "中" | "低";
 type ResearchCompany = {
   id: string;
+  workspaceId: string;
   name: string;
   region: string;
   industry: string;
@@ -50,6 +52,7 @@ type ResearchCompany = {
 };
 type ResearchPlan = {
   id: string;
+  workspaceId: string;
   companyId: string;
   date: string;
   owner: string;
@@ -58,6 +61,7 @@ type ResearchPlan = {
 };
 type ResearchRecord = {
   id: string;
+  workspaceId: string;
   companyId: string;
   date: string;
   interviewer: string;
@@ -89,11 +93,21 @@ type QuestionTemplate = {
   question: string;
 };
 type AppState = {
+  workspaces: Workspace[];
+  activeWorkspaceId: string;
   companies: ResearchCompany[];
   plans: ResearchPlan[];
   records: ResearchRecord[];
   capabilities: Capability[];
   questionTemplates: QuestionTemplate[];
+};
+type Workspace = {
+  id: string;
+  name: string;
+  regionName: string;
+  industryFocus: string[];
+  description: string;
+  status: "试点中" | "进行中" | "已归档";
 };
 type PolicySupport = {
   id: string;
@@ -115,10 +129,23 @@ type TenderSignal = {
 };
 
 const STORE_KEY = "manufacturing-research-system:v1";
+const YANLIANG_WORKSPACE_ID = "workspace-yanliang-aerospace";
 const COLORS = ["#2563eb", "#14b8a6", "#f59e0b", "#ef4444", "#7c3aed", "#0f766e"];
 const policySupports = defaultPolicySupports();
+const defaultWorkspaces: Workspace[] = [
+  {
+    id: YANLIANG_WORKSPACE_ID,
+    name: "阎良航空制造产业",
+    regionName: "西安市阎良区 / 西安航空基地",
+    industryFocus: ["航空制造", "航空材料", "试验验证", "低空经济"],
+    description: "以航空制造产业为主线，研究核心院所、链主企业、配套制造、政策导向与数字化共性诉求。",
+    status: "试点中"
+  }
+];
 
 const initialState: AppState = {
+  workspaces: defaultWorkspaces,
+  activeWorkspaceId: YANLIANG_WORKSPACE_ID,
   companies: [],
   plans: [],
   records: [],
@@ -220,6 +247,7 @@ export function App() {
   const [selectedCompanyId, setSelectedCompanyId] = useState(state.companies[0]?.id ?? "");
   const [profileCompanyId, setProfileCompanyId] = useState<string | null>(null);
   const insights = useMemo(() => buildInsights(state), [state]);
+  const activeWorkspace = state.workspaces.find((workspace) => workspace.id === state.activeWorkspaceId) ?? state.workspaces[0];
   const profileCompany = state.companies.find((company) => company.id === profileCompanyId);
 
   function updateState(next: AppState) {
@@ -254,6 +282,7 @@ export function App() {
           </div>
         </div>
         <nav>
+          <NavItem icon={<MapPinned size={18} />} label="区域概览" active={active === "workspace"} onClick={() => setActive("workspace")} />
           <NavItem icon={<BarChart3 size={18} />} label="数据看板" active={active === "dashboard"} onClick={() => setActive("dashboard")} />
           <NavItem icon={<Building2 size={18} />} label="企业名单" active={active === "companies"} onClick={() => setActive("companies")} />
           <NavItem icon={<Workflow size={18} />} label="产业链地图" active={active === "chain"} onClick={() => setActive("chain")} />
@@ -272,8 +301,10 @@ export function App() {
             <h1>制造业数字化调研管理系统</h1>
             <p>持续沉淀区域企业画像、调研过程、共通需求、能力匹配与决策依据。</p>
           </div>
+          {activeWorkspace ? <div className="workspace-context"><MapPinned size={17} /><div><strong>{activeWorkspace.name}</strong><span>{activeWorkspace.regionName} / {activeWorkspace.status}</span></div></div> : null}
         </header>
 
+        {active === "workspace" && activeWorkspace ? <WorkspaceOverview workspace={activeWorkspace} state={state} insights={insights} /> : null}
         {active === "dashboard" ? <Dashboard state={state} insights={insights} /> : null}
         {active === "companies" ? <Companies state={state} setState={updateState} selectedCompanyId={selectedCompanyId} setSelectedCompanyId={setSelectedCompanyId} openCompanyProfile={openCompanyProfile} /> : null}
         {active === "chain" ? <IndustryChainMap state={state} openCompanyProfile={openCompanyProfile} /> : null}
@@ -295,6 +326,52 @@ export function App() {
           onSave={saveProfileCompany}
         />
       ) : null}
+    </div>
+  );
+}
+
+function WorkspaceOverview({ workspace, state, insights }: { workspace: Workspace; state: AppState; insights: ReturnType<typeof buildInsights> }) {
+  const workspaceCompanies = state.companies.filter((company) => company.workspaceId === workspace.id);
+  const workspacePlans = state.plans.filter((plan) => plan.workspaceId === workspace.id);
+  const workspaceRecords = state.records.filter((record) => record.workspaceId === workspace.id);
+  const completedRecords = workspaceRecords.filter((record) => record.conclusion || record.needs.length).length;
+  return (
+    <div className="page-grid">
+      <section className="workspace-hero">
+        <div>
+          <span className="workspace-eyebrow">区域工作空间 / 当前试点</span>
+          <h2>{workspace.name}</h2>
+          <p>{workspace.description}</p>
+          <div className="workspace-tags">{workspace.industryFocus.map((item) => <span key={item}>{item}</span>)}</div>
+        </div>
+        <div className="workspace-hero-meta">
+          <strong>{workspace.status}</strong>
+          <span>{workspace.regionName}</span>
+          <small>首期以单区域闭环验证；企业、计划和记录已具备区域归属，为后续多区域扩展预留数据边界。</small>
+        </div>
+      </section>
+      <section className="metric-grid">
+        <Metric icon={<Building2 />} label="区域企业" value={workspaceCompanies.length} />
+        <Metric icon={<CalendarDays />} label="调研计划" value={workspacePlans.length} />
+        <Metric icon={<Mic2 />} label="已沉淀记录" value={completedRecords} />
+        <Metric icon={<Target />} label="结构化需求" value={insights.needs.length} />
+      </section>
+      <section className="grid two">
+        <Panel title="本区域研究主线">
+          <div className="workspace-list">
+            <div><strong>产业运行</strong><span>围绕设计、制造、强度验证、试飞适航及配套协同，持续更新产业结构与核心节点关系。</span></div>
+            <div><strong>企业调研</strong><span>通过企业角色、调研假设、动态情报和访谈证据生成适合本次调研的任务包。</span></div>
+            <div><strong>决策输出</strong><span>归纳共性问题、政策杠杆和市场主题，支撑销售进入、研发方向和生态合作决策。</span></div>
+          </div>
+        </Panel>
+        <Panel title="多区域扩展准备">
+          <div className="workspace-list">
+            <div><strong>区域数据边界</strong><span>企业、计划和记录都绑定工作空间；后续新增区域不会混淆原始调研数据。</span></div>
+            <div><strong>平台知识共享</strong><span>能力库、案例库、调研问题模板和行业模型将逐步升级为可跨区域复用的资产。</span></div>
+            <div><strong>横向比较</strong><span>未来可比较不同区域同类企业的需求热度、政策环境和市场进入路径。</span></div>
+          </div>
+        </Panel>
+      </section>
     </div>
   );
 }
@@ -402,6 +479,7 @@ function Companies({ state, setState, selectedCompanyId, setSelectedCompanyId, o
     const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet);
     const imported = rows.map((row) => ({
       id: uid(),
+      workspaceId: state.activeWorkspaceId,
       name: stringCell(row, ["企业名称", "公司名称", "name", "Name"]) || "未命名企业",
       region: stringCell(row, ["区域", "地区", "region"]) || "",
       industry: stringCell(row, ["行业", "industry"]) || "",
@@ -786,6 +864,7 @@ function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedComp
         ...state.plans,
         {
           id: uid(),
+          workspaceId: selectedCompany.workspaceId,
           companyId: selectedCompany.id,
           date: new Date().toISOString().slice(0, 10),
           owner: "我",
@@ -874,6 +953,7 @@ function recommendedFocus(company: ResearchCompany) {
 
 function Plans({ state, setState }: { state: AppState; setState: (state: AppState) => void }) {
   const [draft, setDraft] = useState<Omit<ResearchPlan, "id">>({
+    workspaceId: state.activeWorkspaceId,
     companyId: state.companies[0]?.id ?? "",
     date: new Date().toISOString().slice(0, 10),
     owner: "我",
@@ -890,7 +970,10 @@ function Plans({ state, setState }: { state: AppState; setState: (state: AppStat
     <div className="grid two">
       <Panel title="制定调研计划">
         <div className="form-grid">
-          <label>调研企业<select value={draft.companyId} onChange={(event) => setDraft({ ...draft, companyId: event.target.value })}>{state.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></label>
+          <label>调研企业<select value={draft.companyId} onChange={(event) => {
+            const company = state.companies.find((item) => item.id === event.target.value);
+            setDraft({ ...draft, companyId: event.target.value, workspaceId: company?.workspaceId ?? state.activeWorkspaceId });
+          }}>{state.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></label>
           <Field label="调研日期" type="date" value={draft.date} onChange={(date) => setDraft({ ...draft, date })} />
           <Field label="负责人" value={draft.owner} onChange={(owner) => setDraft({ ...draft, owner })} />
           <label>状态<select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as ResearchPlan["status"] })}><option>计划中</option><option>已完成</option></select></label>
@@ -936,6 +1019,7 @@ function Records({ state, setState, selectedCompanyId }: { state: AppState; setS
     if (!companyId) return;
     const record: ResearchRecord = {
       id: uid(),
+      workspaceId: state.companies.find((company) => company.id === companyId)?.workspaceId ?? state.activeWorkspaceId,
       companyId,
       date: new Date().toISOString().slice(0, 10),
       interviewer: "我",
@@ -1089,12 +1173,17 @@ function usePersistentState() {
 }
 
 function mergeYanliangCompanies(state: AppState): AppState {
+  const workspaces = state.workspaces?.length ? state.workspaces : defaultWorkspaces;
+  const activeWorkspaceId = workspaces.some((workspace) => workspace.id === state.activeWorkspaceId)
+    ? state.activeWorkspaceId
+    : workspaces[0]?.id ?? YANLIANG_WORKSPACE_ID;
   const questionTemplates = state.questionTemplates?.length ? state.questionTemplates : defaultQuestionTemplates();
   const reportCompanyMap = new Map(yanliangCompanies.map((company) => [canonicalCompanyName(company.name), company]));
-  const normalizedCompanies = state.companies
+  const normalizedCompanies = (state.companies ?? [])
     .filter((company) => isYanliangCompany(company) || reportCompanyMap.has(canonicalCompanyName(company.name)))
     .map((company) => ({
       ...company,
+      workspaceId: company.workspaceId ?? YANLIANG_WORKSPACE_ID,
       companyType: company.companyType || inferCompanyType(company),
       chainPosition: company.chainPosition || inferChainPosition(company)
     }))
@@ -1111,21 +1200,28 @@ function mergeYanliangCompanies(state: AppState): AppState {
   });
   const additions = yanliangCompanies.filter((company) => !seen.has(canonicalCompanyName(company.name)));
   const companies = additions.length ? [...dedupedCompanies, ...additions] : dedupedCompanies;
-  const companyIds = new Set(companies.map((company) => company.id));
-  const plans = state.plans.filter((plan) => companyIds.has(plan.companyId));
-  const records = state.records.filter((record) => companyIds.has(record.companyId));
+  const workspaceByCompanyId = new Map(companies.map((company) => [company.id, company.workspaceId]));
+  const plans = (state.plans ?? [])
+    .filter((plan) => workspaceByCompanyId.has(plan.companyId))
+    .map((plan) => ({ ...plan, workspaceId: plan.workspaceId ?? workspaceByCompanyId.get(plan.companyId) ?? YANLIANG_WORKSPACE_ID }));
+  const records = (state.records ?? [])
+    .filter((record) => workspaceByCompanyId.has(record.companyId))
+    .map((record) => ({ ...record, workspaceId: record.workspaceId ?? workspaceByCompanyId.get(record.companyId) ?? YANLIANG_WORKSPACE_ID }));
   const sampleCompany = companies.find((company) => company.name === "西安泽达航空制造有限责任公司") ?? companies.find((company) => company.region.includes("阎良"));
   if (!sampleCompany || records.some((record) => record.id === "yanliang-sample-record")) {
-    return { ...state, companies, plans, records, questionTemplates };
+    return { ...state, workspaces, activeWorkspaceId, companies, plans, records, questionTemplates };
   }
   return {
     ...state,
+    workspaces,
+    activeWorkspaceId,
     questionTemplates,
     companies: companies.map((company) => company.id === sampleCompany.id ? { ...company, status: "调研中" } : company),
     plans: [
       ...plans,
       {
         id: "yanliang-sample-plan",
+        workspaceId: sampleCompany.workspaceId,
         companyId: sampleCompany.id,
         date: new Date().toISOString().slice(0, 10),
         owner: "我",
@@ -1137,6 +1233,7 @@ function mergeYanliangCompanies(state: AppState): AppState {
       ...records,
       {
         id: "yanliang-sample-record",
+        workspaceId: sampleCompany.workspaceId,
         companyId: sampleCompany.id,
         date: new Date().toISOString().slice(0, 10),
         interviewer: "我",
@@ -1497,12 +1594,13 @@ function countBy(values: string[]) {
 }
 
 function emptyCompany(): ResearchCompany {
-  return { id: "", name: "", region: "", industry: "", companyType: "", chainPosition: "", scale: "", contact: "", status: "待调研", maturity: 30, notes: "" };
+  return { id: "", workspaceId: YANLIANG_WORKSPACE_ID, name: "", region: "", industry: "", companyType: "", chainPosition: "", scale: "", contact: "", status: "待调研", maturity: 30, notes: "" };
 }
 
 function yanliangCompany(name: string, industry: string, companyType: string, chainPosition: string, scale: string, maturity: number, notes: string): ResearchCompany {
   return {
     id: uid(),
+    workspaceId: YANLIANG_WORKSPACE_ID,
     name,
     region: "西安市阎良区 / 西安航空基地",
     industry,
