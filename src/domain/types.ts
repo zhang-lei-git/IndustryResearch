@@ -25,6 +25,9 @@ export type ResearchPlan = {
   owner: string;
   objective: string;
   status: "计划中" | "已完成";
+  questionSnapshot?: string[];
+  topicIds?: string[];
+  intelligenceIds?: string[];
 };
 
 export type NeedItem = {

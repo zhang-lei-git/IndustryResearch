@@ -160,17 +160,6 @@ const yanliangCompanies: ResearchCompany[] = [
   yanliangCompany("西安鑫旺矿业设备有限公司", "矿业设备再制造", "成长型企业", "专用设备/再制造", "成长型企业", 45, "公开招聘信息称其从事液压千斤制造与维修、液压缸制造、综采支架维修等。")
 ];
 
-const questionBank = [
-  "企业当前核心产品、主要客户和生产组织模式是什么？",
-  "当前是否已经建设ERP、MES、WMS、QMS、SCADA或数据平台？使用效果如何？",
-  "生产计划、派工、报工、质量检验、设备维护中最痛的环节是什么？",
-  "哪些数据目前靠人工记录？哪些数据希望自动采集？",
-  "近一年是否有数字化项目预算、政策申报或集团考核要求？",
-  "如果只能优先解决一个问题，企业最希望先解决什么？",
-  "现有IT团队、业务负责人和外部供应商配合情况如何？",
-  "对实施周期、投资规模、验收方式有什么约束？"
-];
-
 export function App() {
   const [state, setState] = usePersistentState();
   const [active, setActive] = useState("workspace");
@@ -1012,7 +1001,10 @@ function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedComp
           date: new Date().toISOString().slice(0, 10),
           owner: "我",
           objective: `围绕企业类型“${selectedCompany.companyType}”和产业链位置“${selectedCompany.chainPosition}”开展调研：\n${draftQuestions.map((item, index) => `${index + 1}. ${item}`).join("\n")}`,
-          status: "计划中"
+          status: "计划中",
+          questionSnapshot: draftQuestions,
+          topicIds: Array.from(new Set(companyIntelligence.flatMap((item) => item.topicIds))),
+          intelligenceIds: companyIntelligence.map((item) => item.id)
         }
       ]
     });
@@ -1104,10 +1096,22 @@ function Plans({ state, setState }: { state: AppState; setState: (state: AppStat
     objective: "了解企业数字化现状、关键痛点、近期建设计划和可匹配能力。",
     status: "计划中"
   });
+  const selectedCompany = state.companies.find((company) => company.id === draft.companyId);
+  const preparedQuestions = selectedCompany ? buildResearchQuestions(selectedCompany, state) : [];
+  const linkedIntelligence = selectedCompany ? state.intelligence.filter((item) => intelligenceBelongsToCompany(item, selectedCompany.id) && intelligenceIsRelevant(item)) : [];
 
   function createPlan() {
     if (!draft.companyId) return;
-    setState({ ...state, plans: [...state.plans, { ...draft, id: uid() }] });
+    setState({
+      ...state,
+      plans: [...state.plans, {
+        ...draft,
+        id: uid(),
+        questionSnapshot: preparedQuestions,
+        topicIds: Array.from(new Set(linkedIntelligence.flatMap((item) => item.topicIds))),
+        intelligenceIds: linkedIntelligence.map((item) => item.id)
+      }]
+    });
   }
 
   return (
@@ -1125,10 +1129,12 @@ function Plans({ state, setState }: { state: AppState; setState: (state: AppStat
         <label>调研目标<textarea value={draft.objective} onChange={(event) => setDraft({ ...draft, objective: event.target.value })} /></label>
         <button className="button" type="button" onClick={createPlan}><CalendarDays size={16} /> 生成计划</button>
       </Panel>
-      <Panel title="推荐调研问题">
+      <Panel title="当前调研准备包">
         <div className="question-list">
-          {questionBank.map((question, index) => <div className="question" key={question}><strong>{index + 1}</strong><span>{question}</span></div>)}
+          {preparedQuestions.map((question, index) => <div className="question" key={question}><strong>{index + 1}</strong><span>{question}</span></div>)}
+          {!preparedQuestions.length ? <div className="empty-stage">请选择企业后生成调研问题。</div> : null}
         </div>
+        {linkedIntelligence.length ? <div className="research-context"><strong>本次计划将关联动态情报</strong>{linkedIntelligence.map((item) => <span key={item.id}>{item.type}：{item.title}</span>)}</div> : null}
       </Panel>
       <Panel title="计划列表">
         <div className="card-list">
@@ -1314,7 +1320,7 @@ function Field({ label, value, onChange, type = "text" }: { label: string; value
 }
 
 function PlanCard({ plan, company }: { plan: ResearchPlan; company?: ResearchCompany }) {
-  return <div className="data-card"><strong>{company?.name ?? "-"}</strong><span>{plan.date} / {plan.owner} / {plan.status}</span><p>{plan.objective}</p></div>;
+  return <div className="data-card"><strong>{company?.name ?? "-"}</strong><span>{plan.date} / {plan.owner} / {plan.status}{plan.questionSnapshot?.length ? ` / 问题 ${plan.questionSnapshot.length} 条` : ""}</span><p>{plan.objective}</p></div>;
 }
 
 function RecordCard({ record, company }: { record: ResearchRecord; company?: ResearchCompany }) {
