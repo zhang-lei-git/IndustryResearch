@@ -37,6 +37,7 @@ import type {
   AppState,
   Capability,
   CompanyStatus,
+  IntelligenceItem,
   NeedItem,
   NeedPriority,
   PolicyRecord,
@@ -46,9 +47,9 @@ import type {
   ResearchPlan,
   ResearchRecord,
   ResearchTopic,
-  TenderSignal,
   Workspace
 } from "./domain/types";
+import { intelligenceBelongsToCompany, intelligenceIsRelevant } from "./domain/intelligence";
 import { policyMatchesCompany } from "./domain/policy";
 import { applyStateVersion, parseStoredState, serializeState, STATE_VERSION } from "./state/persistence";
 
@@ -76,6 +77,7 @@ const initialState: AppState = {
   plans: [],
   records: [],
   policies: defaultPolicyRecords(),
+  intelligence: [],
   questionTemplates: defaultQuestionTemplates(),
   capabilities: [
     {
@@ -215,6 +217,7 @@ export function App() {
           <NavGroup label="区域认知">
             <NavItem icon={<Workflow size={18} />} label="产业全景" active={active === "chain"} onClick={() => setActive("chain")} />
             <NavItem icon={<Building2 size={18} />} label="企业库" active={active === "companies"} onClick={() => setActive("companies")} />
+            <NavItem icon={<Search size={18} />} label="动态情报" active={active === "intelligence"} onClick={() => setActive("intelligence")} />
             <NavItem icon={<Scale size={18} />} label="政策库与匹配" active={active === "policies"} onClick={() => setActive("policies")} />
           </NavGroup>
           <NavGroup label="调研工作">
@@ -245,6 +248,7 @@ export function App() {
         {active === "workspace" && activeWorkspace ? <WorkspaceOverview workspace={activeWorkspace} state={state} insights={insights} /> : null}
         {active === "research" && activeWorkspace ? <IndustryResearch state={state} setState={updateState} workspace={activeWorkspace} /> : null}
         {active === "companies" ? <Companies state={state} setState={updateState} selectedCompanyId={selectedCompanyId} setSelectedCompanyId={setSelectedCompanyId} openCompanyProfile={openCompanyProfile} /> : null}
+        {active === "intelligence" ? <IntelligenceCenter state={state} setState={updateState} openCompanyProfile={openCompanyProfile} /> : null}
         {active === "chain" ? <IndustryChainMap state={state} openCompanyProfile={openCompanyProfile} /> : null}
         {active === "questions" ? <QuestionGenerator state={state} setState={updateState} selectedCompanyId={selectedCompanyId} setSelectedCompanyId={setSelectedCompanyId} /> : null}
         {active === "policies" ? <PolicyMatch state={state} setState={updateState} /> : null}
@@ -260,7 +264,7 @@ export function App() {
           key={profileCompany.id}
           company={profileCompany}
           policies={state.policies.filter((policy) => policyMatchesCompany(policy, profileCompany))}
-          tenders={buildTenderSignals(profileCompany)}
+          intelligence={state.intelligence.filter((item) => intelligenceBelongsToCompany(item, profileCompany.id))}
           onClose={() => setProfileCompanyId(null)}
           onSave={saveProfileCompany}
         />
@@ -592,7 +596,7 @@ function Companies({ state, setState, selectedCompanyId, setSelectedCompanyId, o
   );
 }
 
-function CompanyProfileDrawer({ company, policies, tenders, onClose, onSave }: { company: ResearchCompany; policies: PolicyRecord[]; tenders: TenderSignal[]; onClose: () => void; onSave: (company: ResearchCompany) => void }) {
+function CompanyProfileDrawer({ company, policies, intelligence, onClose, onSave }: { company: ResearchCompany; policies: PolicyRecord[]; intelligence: IntelligenceItem[]; onClose: () => void; onSave: (company: ResearchCompany) => void }) {
   const [mode, setMode] = useState<"detail" | "edit">("detail");
   const [draft, setDraft] = useState(company);
 
@@ -613,7 +617,7 @@ function CompanyProfileDrawer({ company, policies, tenders, onClose, onSave }: {
           <button className="icon-button" type="button" onClick={onClose}><X size={18} /></button>
         </div>
         {mode === "detail" ? (
-          <CompanyDetail company={company} policies={policies} tenders={tenders} onEdit={() => {
+          <CompanyDetail company={company} policies={policies} intelligence={intelligence} onEdit={() => {
             setDraft(company);
             setMode("edit");
           }} />
@@ -625,7 +629,7 @@ function CompanyProfileDrawer({ company, policies, tenders, onClose, onSave }: {
   );
 }
 
-function CompanyDetail({ company, policies, tenders, onEdit }: { company: ResearchCompany; policies: PolicyRecord[]; tenders: TenderSignal[]; onEdit: () => void }) {
+function CompanyDetail({ company, policies, intelligence, onEdit }: { company: ResearchCompany; policies: PolicyRecord[]; intelligence: IntelligenceItem[]; onEdit: () => void }) {
   return (
     <div className="drawer-content">
       <div className="detail-grid">
@@ -649,17 +653,19 @@ function CompanyDetail({ company, policies, tenders, onEdit }: { company: Resear
         </ul>
       </section>
       <section className="detail-section">
-        <h3>招投标信息</h3>
+        <h3>外部动态与待验证线索</h3>
         <div className="tender-list">
-          {tenders.map((tender) => (
-            <div className="tender-card" key={tender.id}>
+          {intelligence.map((item) => (
+            <div className="tender-card" key={item.id}>
               <div>
-                <strong>{tender.title}</strong>
-                <span>{tender.source} / {tender.date} / {tender.status}</span>
+                <strong>{item.title}</strong>
+                <span>{item.type} / {item.publishedAt || "发布日期待补充"} / {item.verificationStatus}</span>
               </div>
-              <p>{tender.relevance}</p>
+              <p>{item.summary || "暂无摘要。"}</p>
+              {item.sourceUrl ? <a className="source-link" href={item.sourceUrl} target="_blank" rel="noreferrer">查看来源</a> : <span className="muted-text">来源链接待补充</span>}
             </div>
           ))}
+          {!intelligence.length ? <div className="empty-stage">尚无已录入动态。请在“动态情报”中新增或导入线索后，再用于调研准备和企业判断。</div> : null}
         </div>
       </section>
       <section className="detail-section">
@@ -885,11 +891,94 @@ function PolicyMatch({ state, setState }: { state: AppState; setState: (state: A
   );
 }
 
+function IntelligenceCenter({ state, setState, openCompanyProfile }: { state: AppState; setState: (state: AppState) => void; openCompanyProfile: (id: string) => void }) {
+  const workspaceItems = state.intelligence.filter((item) => item.workspaceId === state.activeWorkspaceId);
+  const [draft, setDraft] = useState<IntelligenceItem>(() => emptyIntelligence(state.activeWorkspaceId));
+  const verifiedCount = workspaceItems.filter((item) => item.verificationStatus === "已核实").length;
+  const pendingCount = workspaceItems.filter((item) => item.verificationStatus === "待验证").length;
+  const relevantCompanies = new Set(workspaceItems.flatMap((item) => item.companyIds)).size;
+
+  function selectItem(item: IntelligenceItem) {
+    setDraft(item);
+  }
+
+  function createItem() {
+    setDraft(emptyIntelligence(state.activeWorkspaceId));
+  }
+
+  function saveItem() {
+    if (!draft.title.trim()) return;
+    const item = {
+      ...draft,
+      id: draft.id || uid(),
+      workspaceId: state.activeWorkspaceId,
+      capturedAt: draft.capturedAt || new Date().toISOString().slice(0, 10)
+    };
+    const exists = state.intelligence.some((existing) => existing.id === item.id);
+    setState({
+      ...state,
+      intelligence: exists ? state.intelligence.map((existing) => existing.id === item.id ? item : existing) : [...state.intelligence, item]
+    });
+    setDraft(item);
+  }
+
+  return (
+    <div className="page-grid">
+      <section className="metric-grid">
+        <Metric icon={<Search />} label="动态情报" value={workspaceItems.length} />
+        <Metric icon={<CheckCircle2 />} label="已核实" value={verifiedCount} />
+        <Metric icon={<ClipboardList />} label="待验证" value={pendingCount} />
+        <Metric icon={<Building2 />} label="关联企业" value={relevantCompanies} />
+      </section>
+      <section className="grid two">
+        <Panel title="区域动态情报库" action={<button className="button secondary" type="button" onClick={createItem}><Plus size={16} /> 新增情报</button>}>
+          <div className="intelligence-list">
+            {workspaceItems.map((item) => {
+              const companies = state.companies.filter((company) => item.companyIds.includes(company.id));
+              const topics = state.topics.filter((topic) => item.topicIds.includes(topic.id));
+              return (
+                <button className="intelligence-card" key={item.id} type="button" onClick={() => selectItem(item)}>
+                  <div className="intelligence-card-head"><span>{item.type}</span><em>{item.verificationStatus}</em></div>
+                  <strong>{item.title}</strong>
+                  <small>{item.publishedAt || "发布日期待补充"} / 采集于 {item.capturedAt || "待补充"}</small>
+                  <p>{item.summary || "暂无摘要。"}</p>
+                  <div className="policy-tags">
+                    {companies.map((company) => <span key={company.id}>{company.name}</span>)}
+                    {topics.map((topic) => <span key={topic.id}>{topic.name}</span>)}
+                    {!companies.length && !topics.length ? <span>尚未关联企业或专题</span> : null}
+                  </div>
+                </button>
+              );
+            })}
+            {!workspaceItems.length ? <div className="empty-stage">暂无动态情报。请录入招投标、采购、新闻、扩产、招聘或认证信息，并关联到企业和研究专题。</div> : null}
+          </div>
+        </Panel>
+        <Panel title={draft.id ? "维护动态情报" : "新增动态情报"}>
+          <div className="form-grid">
+            <label>情报类型<select value={draft.type} onChange={(event) => setDraft({ ...draft, type: event.target.value as IntelligenceItem["type"] })}><option>招投标</option><option>采购</option><option>新闻</option><option>扩产</option><option>招聘</option><option>认证</option><option>其他</option></select></label>
+            <label>核验状态<select value={draft.verificationStatus} onChange={(event) => setDraft({ ...draft, verificationStatus: event.target.value as IntelligenceItem["verificationStatus"] })}><option>待验证</option><option>已核实</option><option>不相关</option><option>已失效</option></select></label>
+            <Field label="标题" value={draft.title} onChange={(title) => setDraft({ ...draft, title })} />
+            <Field label="来源链接" value={draft.sourceUrl} onChange={(sourceUrl) => setDraft({ ...draft, sourceUrl })} />
+            <Field label="发布日期" type="date" value={draft.publishedAt} onChange={(publishedAt) => setDraft({ ...draft, publishedAt })} />
+            <Field label="采集日期" type="date" value={draft.capturedAt} onChange={(capturedAt) => setDraft({ ...draft, capturedAt })} />
+            <label>关联企业<select multiple value={draft.companyIds} onChange={(event) => setDraft({ ...draft, companyIds: Array.from(event.currentTarget.selectedOptions, (option) => option.value) })}>{state.companies.filter((company) => company.workspaceId === state.activeWorkspaceId).map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></label>
+            <label>关联研究专题<select multiple value={draft.topicIds} onChange={(event) => setDraft({ ...draft, topicIds: Array.from(event.currentTarget.selectedOptions, (option) => option.value) })}>{state.topics.filter((topic) => topic.workspaceId === state.activeWorkspaceId).map((topic) => <option key={topic.id} value={topic.id}>{topic.name}</option>)}</select></label>
+          </div>
+          <label>摘要与调研价值<textarea value={draft.summary} onChange={(event) => setDraft({ ...draft, summary: event.target.value })} /></label>
+          <div className="drawer-actions-inline"><span className="muted-text">关联企业可从企业详情进入；关联专题会进入调研准备上下文。</span><button className="button" type="button" onClick={saveItem}><CheckCircle2 size={16} /> 保存情报</button></div>
+          {draft.companyIds.length ? <div className="linked-company-actions">{state.companies.filter((company) => draft.companyIds.includes(company.id)).map((company) => <button key={company.id} className="text-button" type="button" onClick={() => openCompanyProfile(company.id)}>查看 {company.name}</button>)}</div> : null}
+        </Panel>
+      </section>
+    </div>
+  );
+}
+
 function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedCompanyId }: { state: AppState; setState: (state: AppState) => void; selectedCompanyId: string; setSelectedCompanyId: (id: string) => void }) {
   const selectedCompany = state.companies.find((company) => company.id === selectedCompanyId) ?? state.companies[0];
   const [editingTemplate, setEditingTemplate] = useState<QuestionTemplate>(emptyTemplate());
-  const [draftQuestions, setDraftQuestions] = useState<string[]>(() => selectedCompany ? generateQuestions(selectedCompany, state.questionTemplates) : []);
-  const generated = selectedCompany ? generateQuestions(selectedCompany, state.questionTemplates) : [];
+  const [draftQuestions, setDraftQuestions] = useState<string[]>(() => selectedCompany ? buildResearchQuestions(selectedCompany, state) : []);
+  const generated = selectedCompany ? buildResearchQuestions(selectedCompany, state) : [];
+  const companyIntelligence = selectedCompany ? state.intelligence.filter((item) => intelligenceBelongsToCompany(item, selectedCompany.id) && intelligenceIsRelevant(item)) : [];
 
   function refreshQuestions() {
     if (!selectedCompany) return;
@@ -935,12 +1024,13 @@ function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedComp
           <label>调研企业<select value={selectedCompany?.id ?? ""} onChange={(event) => {
             setSelectedCompanyId(event.target.value);
             const company = state.companies.find((item) => item.id === event.target.value);
-            if (company) setDraftQuestions(generateQuestions(company, state.questionTemplates));
+            if (company) setDraftQuestions(buildResearchQuestions(company, state));
           }}>{state.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></label>
           <DetailItem label="企业类型" value={selectedCompany?.companyType ?? "-"} />
           <DetailItem label="产业链位置" value={selectedCompany?.chainPosition ?? "-"} />
           <DetailItem label="行业" value={selectedCompany?.industry ?? "-"} />
         </div>
+        {companyIntelligence.length ? <div className="research-context"><strong>已关联的外部动态</strong>{companyIntelligence.map((item) => <span key={item.id}>{item.type}：{item.title}（{item.verificationStatus}）</span>)}</div> : <div className="empty-stage">该企业尚未关联动态情报；基础问题仍可生成，建议补充外部线索后重新生成。</div>}
         <div className="question-generated-list">
           {draftQuestions.map((question, index) => (
             <label key={`${question}-${index}`}>问题 {index + 1}<textarea value={question} onChange={(event) => setDraftQuestions(draftQuestions.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} /></label>
@@ -1249,6 +1339,13 @@ function mergeYanliangCompanies(state: AppState): AppState {
     ...policy,
     version: policy.version || 1
   })) : defaultPolicyRecords();
+  const intelligence = (state.intelligence ?? []).map((item) => ({
+    ...emptyIntelligence(item.workspaceId || activeWorkspaceId),
+    ...item,
+    workspaceId: item.workspaceId || activeWorkspaceId,
+    companyIds: item.companyIds ?? [],
+    topicIds: item.topicIds ?? []
+  })).filter((item) => workspaces.some((workspace) => workspace.id === item.workspaceId));
   const questionTemplates = state.questionTemplates?.length ? state.questionTemplates : defaultQuestionTemplates();
   const reportCompanyMap = new Map(yanliangCompanies.map((company) => [canonicalCompanyName(company.name), company]));
   const normalizedCompanies = (state.companies ?? [])
@@ -1281,7 +1378,7 @@ function mergeYanliangCompanies(state: AppState): AppState {
     .map((record) => ({ ...record, workspaceId: record.workspaceId ?? workspaceByCompanyId.get(record.companyId) ?? YANLIANG_WORKSPACE_ID }));
   const sampleCompany = companies.find((company) => company.name === "西安泽达航空制造有限责任公司") ?? companies.find((company) => company.region.includes("阎良"));
   if (!sampleCompany || records.some((record) => record.id === "yanliang-sample-record")) {
-    return { ...state, dataVersion: STATE_VERSION, workspaces, activeWorkspaceId, topics, hypotheses, policies, companies, plans, records, questionTemplates };
+    return { ...state, dataVersion: STATE_VERSION, workspaces, activeWorkspaceId, topics, hypotheses, policies, intelligence, companies, plans, records, questionTemplates };
   }
   return {
     ...state,
@@ -1291,6 +1388,7 @@ function mergeYanliangCompanies(state: AppState): AppState {
     topics,
     hypotheses,
     policies,
+    intelligence,
     questionTemplates,
     companies: companies.map((company) => company.id === sampleCompany.id ? { ...company, status: "调研中" } : company),
     plans: [
@@ -1561,37 +1659,6 @@ function buildCoreRelations(companies: ResearchCompany[]) {
   ];
 }
 
-function buildTenderSignals(company: ResearchCompany): TenderSignal[] {
-  const baseKeywords = ["MES/MOM", "工业互联网", "质量追溯", "设备联网", "数据平台"];
-  const positionKeywords = company.chainPosition.includes("研发") || company.chainPosition.includes("设计")
-    ? ["研发项目管理", "型号数据管理", "知识库"]
-    : company.chainPosition.includes("试飞") || company.chainPosition.includes("强度")
-      ? ["试验数据管理", "检测平台", "问题闭环"]
-      : company.chainPosition.includes("整机") || company.companyType.includes("链主")
-        ? ["供应链协同", "供应商质量管理", "产业链协同平台"]
-        : ["车间执行", "质量检验", "设备采集"];
-  const keywords = Array.from(new Set([...positionKeywords, ...baseKeywords])).slice(0, 6);
-
-  return [
-    {
-      id: `${company.id}-tender-watch`,
-      title: `${company.name} 数字化相关招标/采购线索`,
-      source: "待接入公开招采平台",
-      date: "待更新",
-      status: "待手动更新",
-      relevance: `建议按“${company.name}”及“${keywords.join("、")}”建立检索条件，沉淀标题、发布时间、来源链接、预算金额和数字化相关性。`
-    },
-    {
-      id: `${company.id}-tender-question`,
-      title: "调研时需要核实的近期采购方向",
-      source: "调研问题生成",
-      date: "访谈时确认",
-      status: "待访谈确认",
-      relevance: `重点询问近一年是否关注或发布过${keywords.slice(0, 4).join("、")}相关项目，以及是否可结合政策补贴降低立项门槛。`
-    }
-  ];
-}
-
 function defaultPolicyRecords(): PolicyRecord[] {
   return defaultPolicySupports().map((policy) => ({
     ...policy,
@@ -1675,6 +1742,19 @@ function generateQuestions(company: ResearchCompany, templates: QuestionTemplate
   return Array.from(new Set([...(matched.length ? matched : fallback), ...fallback].map((template) => template.question))).slice(0, 12);
 }
 
+function buildResearchQuestions(company: ResearchCompany, state: AppState) {
+  const intelligenceQuestions = state.intelligence
+    .filter((item) => intelligenceBelongsToCompany(item, company.id) && intelligenceIsRelevant(item))
+    .map((item) => `围绕“${item.title}”这条${item.type}线索，实际项目背景、预算/优先级、牵头部门和下一步计划分别是什么？`);
+  const topicQuestions = state.intelligence
+    .filter((item) => intelligenceBelongsToCompany(item, company.id) && intelligenceIsRelevant(item))
+    .flatMap((item) => item.topicIds)
+    .map((topicId) => state.topics.find((topic) => topic.id === topicId)?.name)
+    .filter((topic): topic is string => Boolean(topic))
+    .map((topic) => `这项工作与研究专题“${topic}”有哪些关联？企业最需要区域协同或政策支持的环节是什么？`);
+  return Array.from(new Set([...generateQuestions(company, state.questionTemplates), ...intelligenceQuestions, ...topicQuestions])).slice(0, 14);
+}
+
 function templateMatchesCompany(template: QuestionTemplate, company: ResearchCompany) {
   const typeMatched = !template.appliesToTypes.length || template.appliesToTypes.some((type) => company.companyType.includes(type) || type.includes(company.companyType));
   const positionMatched = !template.appliesToPositions.length || template.appliesToPositions.some((position) => company.chainPosition.includes(position) || position.includes(company.chainPosition));
@@ -1753,6 +1833,22 @@ function emptyPolicy(): PolicyRecord {
     status: "待核实",
     version: 1,
     lastUpdatedAt: ""
+  };
+}
+
+function emptyIntelligence(workspaceId: string): IntelligenceItem {
+  return {
+    id: "",
+    workspaceId,
+    type: "招投标",
+    title: "",
+    sourceUrl: "",
+    publishedAt: "",
+    capturedAt: new Date().toISOString().slice(0, 10),
+    summary: "",
+    verificationStatus: "待验证",
+    companyIds: [],
+    topicIds: []
   };
 }
 

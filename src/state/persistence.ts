@@ -1,6 +1,6 @@
 import type { AppState } from "../domain/types";
 
-export const STATE_VERSION = 2;
+export const STATE_VERSION = 3;
 
 export function parseStoredState(raw: string | null): Partial<AppState> | null {
   if (!raw) return null;

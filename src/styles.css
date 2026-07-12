@@ -426,6 +426,10 @@ textarea {
   line-height: 1.6;
 }
 
+select[multiple] {
+  min-height: 116px;
+}
+
 label {
   display: grid;
   gap: 7px;
@@ -592,6 +596,7 @@ label {
 
 .company-table,
 .card-list,
+.intelligence-list,
 .question-list,
 .question-generated-list,
 .need-list,
@@ -783,6 +788,116 @@ label {
   color: #334155;
   line-height: 1.65;
   margin: 10px 0;
+}
+
+.source-link,
+.text-button {
+  color: var(--brand);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.source-link:hover,
+.text-button:hover {
+  color: var(--brand-dark);
+}
+
+.text-button {
+  border: 0;
+  background: transparent;
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.intelligence-card {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #fff;
+  color: var(--ink);
+  padding: 14px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.intelligence-card:hover {
+  border-color: #9db8f7;
+  background: #f7faff;
+}
+
+.intelligence-card-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.intelligence-card-head span,
+.intelligence-card-head em {
+  font-size: 12px;
+  font-style: normal;
+  font-weight: 700;
+}
+
+.intelligence-card-head span {
+  color: var(--brand-dark);
+}
+
+.intelligence-card-head em {
+  border-radius: 999px;
+  background: #eaf1ff;
+  color: var(--brand-dark);
+  padding: 4px 8px;
+}
+
+.intelligence-card strong,
+.intelligence-card small {
+  display: block;
+}
+
+.intelligence-card strong {
+  line-height: 1.45;
+}
+
+.intelligence-card small {
+  margin-top: 5px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.intelligence-card p {
+  margin: 9px 0;
+  color: #334155;
+  line-height: 1.6;
+}
+
+.research-context {
+  display: grid;
+  gap: 7px;
+  margin: 0 0 14px;
+  border: 1px solid #cfe7e2;
+  border-radius: 12px;
+  background: #f3fbf9;
+  padding: 12px;
+}
+
+.research-context strong {
+  color: #0f766e;
+  font-size: 13px;
+}
+
+.research-context span {
+  color: #334155;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.linked-company-actions {
+  display: grid;
+  gap: 8px;
+  margin-top: 12px;
 }
 
 .chain-workspace {

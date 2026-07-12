@@ -107,13 +107,21 @@ export type PolicyRecord = {
   lastUpdatedAt: string;
 };
 
-export type TenderSignal = {
+export type IntelligenceType = "招投标" | "采购" | "新闻" | "扩产" | "招聘" | "认证" | "其他";
+export type IntelligenceVerificationStatus = "待验证" | "已核实" | "不相关" | "已失效";
+
+export type IntelligenceItem = {
   id: string;
+  workspaceId: string;
+  type: IntelligenceType;
   title: string;
-  source: string;
-  date: string;
-  status: string;
-  relevance: string;
+  sourceUrl: string;
+  publishedAt: string;
+  capturedAt: string;
+  summary: string;
+  verificationStatus: IntelligenceVerificationStatus;
+  companyIds: string[];
+  topicIds: string[];
 };
 
 export type AppState = {
@@ -126,6 +134,7 @@ export type AppState = {
   plans: ResearchPlan[];
   records: ResearchRecord[];
   policies: PolicyRecord[];
+  intelligence: IntelligenceItem[];
   capabilities: Capability[];
   questionTemplates: QuestionTemplate[];
 };
