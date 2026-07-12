@@ -399,12 +399,12 @@ function WorkspaceOverview({ workspace, state, insights }: { workspace: Workspac
 }
 
 function IndustryResearch({ state, setState, workspace }: { state: AppState; setState: (state: AppState) => void; workspace: Workspace }) {
-  const topics = state.topics.filter((topic) => topic.workspaceId === workspace.id);
+  const topics = (state.topics ?? []).filter((topic) => topic.workspaceId === workspace.id);
   const [selectedTopicId, setSelectedTopicId] = useState(topics[0]?.id ?? "");
   const [topicDraft, setTopicDraft] = useState({ name: "", description: "", tags: "" });
   const [hypothesisDraft, setHypothesisDraft] = useState({ statement: "", evidence: "" });
   const selectedTopic = topics.find((topic) => topic.id === selectedTopicId) ?? topics[0];
-  const hypotheses = state.hypotheses.filter((hypothesis) => hypothesis.workspaceId === workspace.id && hypothesis.topicId === selectedTopic?.id);
+  const hypotheses = (state.hypotheses ?? []).filter((hypothesis) => hypothesis.workspaceId === workspace.id && hypothesis.topicId === selectedTopic?.id);
 
   function addTopic() {
     if (!topicDraft.name.trim()) return;
@@ -416,7 +416,7 @@ function IndustryResearch({ state, setState, workspace }: { state: AppState; set
       tags: splitTags(topicDraft.tags),
       status: "待验证"
     };
-    setState({ ...state, topics: [...state.topics, topic] });
+    setState({ ...state, topics: [...(state.topics ?? []), topic] });
     setSelectedTopicId(topic.id);
     setTopicDraft({ name: "", description: "", tags: "" });
   }
@@ -431,7 +431,7 @@ function IndustryResearch({ state, setState, workspace }: { state: AppState; set
       evidence: hypothesisDraft.evidence.trim() || "尚无证据，需通过企业访谈、公开情报或政策材料验证。",
       status: "待验证"
     };
-    setState({ ...state, hypotheses: [...state.hypotheses, hypothesis] });
+    setState({ ...state, hypotheses: [...(state.hypotheses ?? []), hypothesis] });
     setHypothesisDraft({ statement: "", evidence: "" });
   }
 
