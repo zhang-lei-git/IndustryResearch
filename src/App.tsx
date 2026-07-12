@@ -93,6 +93,7 @@ type QuestionTemplate = {
   question: string;
 };
 type AppState = {
+  dataVersion: number;
   workspaces: Workspace[];
   activeWorkspaceId: string;
   topics: ResearchTopic[];
@@ -147,6 +148,7 @@ type TenderSignal = {
 };
 
 const STORE_KEY = "manufacturing-research-system:v1";
+const STATE_VERSION = 2;
 const YANLIANG_WORKSPACE_ID = "workspace-yanliang-aerospace";
 const COLORS = ["#2563eb", "#14b8a6", "#f59e0b", "#ef4444", "#7c3aed", "#0f766e"];
 const policySupports = defaultPolicySupports();
@@ -162,6 +164,7 @@ const defaultWorkspaces: Workspace[] = [
 ];
 
 const initialState: AppState = {
+  dataVersion: STATE_VERSION,
   workspaces: defaultWorkspaces,
   activeWorkspaceId: YANLIANG_WORKSPACE_ID,
   topics: [],
@@ -263,7 +266,7 @@ const questionBank = [
 
 export function App() {
   const [state, setState] = usePersistentState();
-  const [active, setActive] = useState("dashboard");
+  const [active, setActive] = useState("workspace");
   const [selectedCompanyId, setSelectedCompanyId] = useState(state.companies[0]?.id ?? "");
   const [profileCompanyId, setProfileCompanyId] = useState<string | null>(null);
   const insights = useMemo(() => buildInsights(state), [state]);
@@ -301,32 +304,41 @@ export function App() {
             <small>Manufacturing Research</small>
           </div>
         </div>
-        <nav>
-          <NavItem icon={<MapPinned size={18} />} label="区域概览" active={active === "workspace"} onClick={() => setActive("workspace")} />
-          <NavItem icon={<BarChart3 size={18} />} label="数据看板" active={active === "dashboard"} onClick={() => setActive("dashboard")} />
-          <NavItem icon={<Target size={18} />} label="产业研究" active={active === "research"} onClick={() => setActive("research")} />
-          <NavItem icon={<Building2 size={18} />} label="企业名单" active={active === "companies"} onClick={() => setActive("companies")} />
-          <NavItem icon={<Workflow size={18} />} label="产业链地图" active={active === "chain"} onClick={() => setActive("chain")} />
-          <NavItem icon={<ClipboardList size={18} />} label="问题生成" active={active === "questions"} onClick={() => setActive("questions")} />
-          <NavItem icon={<Scale size={18} />} label="政策匹配" active={active === "policies"} onClick={() => setActive("policies")} />
-          <NavItem icon={<CalendarDays size={18} />} label="调研计划" active={active === "plans"} onClick={() => setActive("plans")} />
-          <NavItem icon={<Mic2 size={18} />} label="调研记录" active={active === "records"} onClick={() => setActive("records")} />
-          <NavItem icon={<Target size={18} />} label="需求归纳" active={active === "needs"} onClick={() => setActive("needs")} />
-          <NavItem icon={<Lightbulb size={18} />} label="建议结论" active={active === "advice"} onClick={() => setActive("advice")} />
+        <nav aria-label="主导航">
+          <NavGroup label="区域工作台">
+            <NavItem icon={<MapPinned size={18} />} label="区域驾驶舱" active={active === "workspace"} onClick={() => setActive("workspace")} />
+          </NavGroup>
+          <NavGroup label="区域认知">
+            <NavItem icon={<Workflow size={18} />} label="产业全景" active={active === "chain"} onClick={() => setActive("chain")} />
+            <NavItem icon={<Building2 size={18} />} label="企业库" active={active === "companies"} onClick={() => setActive("companies")} />
+            <NavItem icon={<Scale size={18} />} label="政策库与匹配" active={active === "policies"} onClick={() => setActive("policies")} />
+          </NavGroup>
+          <NavGroup label="调研工作">
+            <NavItem icon={<ClipboardList size={18} />} label="调研准备包" active={active === "questions"} onClick={() => setActive("questions")} />
+            <NavItem icon={<CalendarDays size={18} />} label="调研计划" active={active === "plans"} onClick={() => setActive("plans")} />
+            <NavItem icon={<Mic2 size={18} />} label="调研记录" active={active === "records"} onClick={() => setActive("records")} />
+          </NavGroup>
+          <NavGroup label="分析洞察">
+            <NavItem icon={<Target size={18} />} label="研究专题" active={active === "research"} onClick={() => setActive("research")} />
+            <NavItem icon={<BarChart3 size={18} />} label="需求洞察" active={active === "needs"} onClick={() => setActive("needs")} />
+          </NavGroup>
+          <NavGroup label="决策与资产">
+            <NavItem icon={<Lightbulb size={18} />} label="决策中心" active={active === "advice"} onClick={() => setActive("advice")} />
+            <NavItem icon={<Settings2 size={18} />} label="知识资产" active={active === "knowledge"} onClick={() => setActive("knowledge")} />
+          </NavGroup>
         </nav>
       </aside>
 
       <main className="main">
         <header className="topbar">
           <div>
-            <h1>制造业数字化调研管理系统</h1>
-            <p>持续沉淀区域企业画像、调研过程、共通需求、能力匹配与决策依据。</p>
+            <h1>区域产业调研与机会决策系统</h1>
+            <p>从区域认知出发，完成调研、洞察与市场、销售、研发决策闭环。</p>
           </div>
           {activeWorkspace ? <div className="workspace-context"><MapPinned size={17} /><div><strong>{activeWorkspace.name}</strong><span>{activeWorkspace.regionName} / {activeWorkspace.status}</span></div></div> : null}
         </header>
 
         {active === "workspace" && activeWorkspace ? <WorkspaceOverview workspace={activeWorkspace} state={state} insights={insights} /> : null}
-        {active === "dashboard" ? <Dashboard state={state} insights={insights} /> : null}
         {active === "research" && activeWorkspace ? <IndustryResearch state={state} setState={updateState} workspace={activeWorkspace} /> : null}
         {active === "companies" ? <Companies state={state} setState={updateState} selectedCompanyId={selectedCompanyId} setSelectedCompanyId={setSelectedCompanyId} openCompanyProfile={openCompanyProfile} /> : null}
         {active === "chain" ? <IndustryChainMap state={state} openCompanyProfile={openCompanyProfile} /> : null}
@@ -336,6 +348,7 @@ export function App() {
         {active === "records" ? <Records state={state} setState={updateState} selectedCompanyId={selectedCompanyId} /> : null}
         {active === "needs" ? <Needs state={state} /> : null}
         {active === "advice" ? <Advice state={state} insights={insights} /> : null}
+        {active === "knowledge" ? <KnowledgeAssets state={state} /> : null}
       </main>
 
       {profileCompany ? (
@@ -394,6 +407,7 @@ function WorkspaceOverview({ workspace, state, insights }: { workspace: Workspac
           </div>
         </Panel>
       </section>
+      <Dashboard state={state} insights={insights} showMetrics={false} />
     </div>
   );
 }
@@ -482,15 +496,15 @@ function IndustryResearch({ state, setState, workspace }: { state: AppState; set
   );
 }
 
-function Dashboard({ state, insights }: { state: AppState; insights: ReturnType<typeof buildInsights> }) {
+function Dashboard({ state, insights, showMetrics = true }: { state: AppState; insights: ReturnType<typeof buildInsights>; showMetrics?: boolean }) {
   return (
     <div className="page-grid">
-      <section className="metric-grid">
+      {showMetrics ? <section className="metric-grid">
         <Metric icon={<Building2 />} label="企业数" value={state.companies.length} />
         <Metric icon={<CalendarDays />} label="计划数" value={state.plans.length} />
         <Metric icon={<Mic2 />} label="记录数" value={state.records.length} />
         <Metric icon={<Target />} label="需求数" value={insights.needs.length} />
-      </section>
+      </section> : null}
       <section className="grid two">
         <ChartCard title="行业分布">
           <ResponsiveContainer width="100%" height={260}>
@@ -1198,15 +1212,22 @@ function Needs({ state }: { state: AppState }) {
 function Advice({ state, insights }: { state: AppState; insights: ReturnType<typeof buildInsights> }) {
   return (
     <div className="grid two">
-      <Panel title="调研建议">
+      <Panel title="市场与调研建议">
         <div className="advice-list">
           {insights.suggestions.map((item) => <div className="advice" key={item}><Lightbulb size={18} /><span>{item}</span></div>)}
         </div>
       </Panel>
-      <Panel title="区域结论草稿">
+      <Panel title="区域决策结论草稿">
         <textarea className="conclusion-box" readOnly value={buildConclusion(state, insights)} />
       </Panel>
-      <Panel title="你的能力库">
+    </div>
+  );
+}
+
+function KnowledgeAssets({ state }: { state: AppState }) {
+  return (
+    <div className="grid two">
+      <Panel title="服务能力库">
         <div className="capability-list">
           {state.capabilities.map((capability) => (
             <div className="capability-card" key={capability.id}>
@@ -1216,8 +1237,23 @@ function Advice({ state, insights }: { state: AppState; insights: ReturnType<typ
           ))}
         </div>
       </Panel>
+      <Panel title="调研问题模板">
+        <div className="template-list">
+          {state.questionTemplates.map((template) => (
+            <div className="template-row" key={template.id}>
+              <strong>{template.category}</strong>
+              <span>{template.question}</span>
+              <em>{[...template.appliesToTypes, ...template.appliesToPositions].join(" / ") || "通用"}</em>
+            </div>
+          ))}
+        </div>
+      </Panel>
     </div>
   );
+}
+
+function NavGroup({ label, children }: { label: string; children: React.ReactNode }) {
+  return <div className="nav-group"><span>{label}</span>{children}</div>;
 }
 
 function NavItem({ icon, label, active, onClick }: { icon: React.ReactNode; label: string; active: boolean; onClick: () => void }) {
@@ -1317,10 +1353,11 @@ function mergeYanliangCompanies(state: AppState): AppState {
     .map((record) => ({ ...record, workspaceId: record.workspaceId ?? workspaceByCompanyId.get(record.companyId) ?? YANLIANG_WORKSPACE_ID }));
   const sampleCompany = companies.find((company) => company.name === "西安泽达航空制造有限责任公司") ?? companies.find((company) => company.region.includes("阎良"));
   if (!sampleCompany || records.some((record) => record.id === "yanliang-sample-record")) {
-    return { ...state, workspaces, activeWorkspaceId, topics, hypotheses, companies, plans, records, questionTemplates };
+    return { ...state, dataVersion: STATE_VERSION, workspaces, activeWorkspaceId, topics, hypotheses, companies, plans, records, questionTemplates };
   }
   return {
     ...state,
+    dataVersion: STATE_VERSION,
     workspaces,
     activeWorkspaceId,
     topics,

@@ -87,7 +87,19 @@ button {
 
 nav {
   display: grid;
-  gap: 7px;
+  gap: 16px;
+}
+
+.nav-group {
+  display: grid;
+  gap: 5px;
+}
+
+.nav-group > span {
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 800;
+  padding: 0 12px;
 }
 
 nav button {
