@@ -41,6 +41,7 @@ import type {
   NeedItem,
   NeedPriority,
   NeedStatus,
+  PlanTarget,
   PolicyRecord,
   QuestionSet,
   QuestionTemplate,
@@ -80,6 +81,7 @@ const initialState: AppState = {
   samplingStrategies: [],
   researchSamples: [],
   questionSets: [],
+  planTargets: [],
   companies: [],
   plans: [],
   records: [],
@@ -1166,20 +1168,68 @@ function Plans({ state, setState }: { state: AppState; setState: (state: AppStat
       const scaleMatches = !recommendation.scale || company.scale.includes(recommendation.scale);
       return typeMatches && positionMatches && scaleMatches && company.workspaceId === state.activeWorkspaceId;
     });
+    const task = state.researchTasks.find((item) => item.workspaceId === state.activeWorkspaceId && item.status === "进行中") ?? state.researchTasks.find((item) => item.workspaceId === state.activeWorkspaceId);
+    const strategyId = uid();
+    const candidates = task ? matches.filter((company) => !state.researchSamples.some((sample) => sample.taskId === task.id && sample.companyId === company.id)).map((company) => ({
+      id: uid(),
+      taskId: task.id,
+      companyId: company.id,
+      sampleRole: "候选样本",
+      selectionReason: `匹配选样策略：${[recommendation.type && `类型=${recommendation.type}`, recommendation.position && `产业位置=${recommendation.position}`, recommendation.scale && `规模=${recommendation.scale}`].filter(Boolean).join("；") || "当前区域企业池"}`,
+      priority: "中" as const,
+      status: "候选" as const,
+      snapshotAt: new Date().toISOString().slice(0, 10)
+    })) : [];
+    setState({
+      ...state,
+      samplingStrategies: task ? [...state.samplingStrategies, { id: strategyId, taskId: task.id, companyTypeKeywords: splitTags(recommendation.type), chainPositionKeywords: splitTags(recommendation.position), scaleKeywords: splitTags(recommendation.scale), intelligenceTypes: [], createdAt: new Date().toISOString().slice(0, 10) }] : state.samplingStrategies,
+      researchSamples: [...state.researchSamples, ...candidates]
+    });
     setDraft({ ...draft, companyIds: matches.map((company) => company.id) });
   }
 
   function createPlan() {
     if (!draft.companyIds.length) return;
+    const planId = uid();
+    const task = state.researchTasks.find((item) => item.workspaceId === draft.workspaceId && item.status === "进行中") ?? state.researchTasks.find((item) => item.workspaceId === draft.workspaceId);
+    const newSamples = task ? draft.companyIds.filter((companyId) => !state.researchSamples.some((sample) => sample.taskId === task.id && sample.companyId === companyId)).map((companyId) => ({
+      id: uid(),
+      taskId: task.id,
+      companyId,
+      sampleRole: "待补充",
+      selectionReason: "由调研计划选择并纳入任务样本。",
+      priority: "中" as const,
+      status: "已计划" as const,
+      snapshotAt: new Date().toISOString().slice(0, 10)
+    })) : [];
+    const planTargets = draft.companyIds.map((companyId) => {
+      const questionSet = state.questionSets.filter((item) => item.companyId === companyId && item.status === "已冻结").sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0];
+      const company = state.companies.find((item) => item.id === companyId);
+      return {
+        id: uid(),
+        planId,
+        sampleId: state.researchSamples.find((sample) => sample.taskId === task?.id && sample.companyId === companyId)?.id ?? newSamples.find((sample) => sample.companyId === companyId)?.id,
+        companyId,
+        questionSetId: questionSet?.id,
+        questionSnapshot: questionSet?.items.sort((a, b) => a.order - b.order).map((item) => item.content) ?? (company ? buildResearchQuestions(company, state) : []),
+        scheduledAt: draft.date,
+        method: "待确认",
+        owner: draft.owner,
+        status: "待执行"
+      } satisfies PlanTarget;
+    });
     setState({
       ...state,
       plans: [...state.plans, {
         ...draft,
-        id: uid(),
+        id: planId,
+        taskId: task?.id,
         questionSnapshot: preparedQuestions,
         topicIds: Array.from(new Set(linkedIntelligence.flatMap((item) => item.topicIds))),
         intelligenceIds: linkedIntelligence.map((item) => item.id)
-      }]
+      }],
+      planTargets: [...state.planTargets, ...planTargets],
+      researchSamples: [...state.researchSamples.map((sample) => draft.companyIds.includes(sample.companyId) && sample.taskId === task?.id ? { ...sample, status: "已计划" as const } : sample), ...newSamples]
     });
   }
 
@@ -1222,7 +1272,7 @@ function Plans({ state, setState }: { state: AppState; setState: (state: AppStat
 
 function Records({ state, setState, selectedCompanyId }: { state: AppState; setState: (state: AppState) => void; selectedCompanyId: string }) {
   const [companyId, setCompanyId] = useState(selectedCompanyId);
-  const [planId, setPlanId] = useState("");
+  const [planTargetId, setPlanTargetId] = useState("");
   const [summary, setSummary] = useState("");
   const [transcript, setTranscript] = useState("");
   const [conclusion, setConclusion] = useState("");
@@ -1244,11 +1294,13 @@ function Records({ state, setState, selectedCompanyId }: { state: AppState; setS
   }
 
   function saveRecord() {
-    if (!companyId) return;
+    const planTarget = state.planTargets.find((item) => item.id === planTargetId);
+    if (!companyId || !planTarget || state.records.some((record) => record.planTargetId === planTarget.id)) return;
     const record: ResearchRecord = {
       id: uid(),
       workspaceId: state.companies.find((company) => company.id === companyId)?.workspaceId ?? state.activeWorkspaceId,
-      planId: planId || undefined,
+      planId: planTarget.planId,
+      planTargetId: planTarget.id,
       companyId,
       date: new Date().toISOString().slice(0, 10),
       interviewer: "我",
@@ -1262,7 +1314,8 @@ function Records({ state, setState, selectedCompanyId }: { state: AppState; setS
     setState({
       ...state,
       records: [...state.records, record],
-      companies: state.companies.map((company) => company.id === companyId ? { ...company, status: "已完成" } : company)
+      companies: state.companies.map((company) => company.id === companyId ? { ...company, status: "已完成" } : company),
+      planTargets: state.planTargets.map((item) => item.id === planTarget.id ? { ...item, status: "已完成" } : item)
     });
     setSummary("");
     setTranscript("");
@@ -1292,13 +1345,12 @@ function Records({ state, setState, selectedCompanyId }: { state: AppState; setS
         if (file) void uploadAudio(file);
       }} /></label>}>
         <div className="form-grid">
-          <label>所属调研计划<select value={planId} onChange={(event) => {
-            const nextPlanId = event.target.value;
-            const plan = state.plans.find((item) => item.id === nextPlanId);
-            setPlanId(nextPlanId);
-            if (plan?.companyIds.length && !plan.companyIds.includes(companyId)) setCompanyId(plan.companyIds[0]);
-          }}><option value="">独立调研记录</option>{state.plans.filter((plan) => plan.workspaceId === state.activeWorkspaceId).map((plan) => <option key={plan.id} value={plan.id}>{plan.date} / {plan.owner} / {plan.companyIds.length} 家企业</option>)}</select></label>
-          <label>调研企业<select value={companyId} onChange={(event) => setCompanyId(event.target.value)}>{state.companies.filter((company) => !planId || state.plans.find((plan) => plan.id === planId)?.companyIds.includes(company.id)).map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></label>
+          <label>计划对象<select value={planTargetId} onChange={(event) => {
+            const target = state.planTargets.find((item) => item.id === event.target.value);
+            setPlanTargetId(event.target.value);
+            if (target) setCompanyId(target.companyId);
+          }}><option value="">请选择计划对象</option>{state.planTargets.filter((target) => target.status !== "已完成" && !state.records.some((record) => record.planTargetId === target.id)).map((target) => <option key={target.id} value={target.id}>{target.scheduledAt} / {state.companies.find((company) => company.id === target.companyId)?.name ?? "企业待补充"}</option>)}</select></label>
+          <DetailItem label="调研企业" value={state.companies.find((company) => company.id === companyId)?.name ?? "请选择计划对象"} />
           <Field label="访谈人" value="我" onChange={() => undefined} />
         </div>
         {audio ? <div className="audio-card"><FileAudio size={18} /><span>{audio.name}</span><audio controls src={audio.url} /></div> : null}
@@ -1539,16 +1591,27 @@ function mergeYanliangCompanies(state: AppState): AppState {
       };
     })
     .filter((plan) => plan.companyIds.length);
+  const planTargets = state.planTargets?.length ? state.planTargets : plans.flatMap((plan) => plan.companyIds.map((companyId) => ({
+    id: `legacy-target-${plan.id}-${companyId}`,
+    planId: plan.id,
+    companyId,
+    questionSnapshot: plan.questionSnapshot ?? [],
+    scheduledAt: plan.date,
+    method: "待补充",
+    owner: plan.owner,
+    status: plan.status === "已完成" ? "已完成" : "待执行"
+  } satisfies PlanTarget)));
   const records = (state.records ?? [])
     .filter((record) => workspaceByCompanyId.has(record.companyId))
     .map((record) => ({
       ...record,
+      planTargetId: record.planTargetId ?? planTargets.find((target) => target.planId === record.planId && target.companyId === record.companyId)?.id,
       workspaceId: record.workspaceId ?? workspaceByCompanyId.get(record.companyId) ?? YANLIANG_WORKSPACE_ID,
       needs: (record.needs ?? []).map((need) => ({ ...need, status: need.status ?? "待确认" }))
     }));
   const sampleCompany = companies.find((company) => company.name === "西安泽达航空制造有限责任公司") ?? companies.find((company) => company.region.includes("阎良"));
   if (!sampleCompany || records.some((record) => record.id === "yanliang-sample-record")) {
-    return { ...state, dataVersion: STATE_VERSION, workspaces, activeWorkspaceId, topics, hypotheses, researchTasks, samplingStrategies, researchSamples, questionSets, policies, intelligence, companies, plans, records, questionTemplates };
+    return { ...state, dataVersion: STATE_VERSION, workspaces, activeWorkspaceId, topics, hypotheses, researchTasks, samplingStrategies, researchSamples, questionSets, planTargets, policies, intelligence, companies, plans, records, questionTemplates };
   }
   return {
     ...state,
@@ -1561,6 +1624,7 @@ function mergeYanliangCompanies(state: AppState): AppState {
     samplingStrategies,
     researchSamples,
     questionSets,
+    planTargets,
     policies,
     intelligence,
     questionTemplates,

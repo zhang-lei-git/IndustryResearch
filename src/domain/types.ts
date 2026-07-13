@@ -211,6 +211,7 @@ export type AppState = {
   samplingStrategies: SamplingStrategy[];
   researchSamples: ResearchSample[];
   questionSets: QuestionSet[];
+  planTargets: PlanTarget[];
   companies: ResearchCompany[];
   plans: ResearchPlan[];
   records: ResearchRecord[];

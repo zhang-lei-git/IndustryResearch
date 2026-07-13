@@ -27,6 +27,7 @@ describe("local state persistence", () => {
       samplingStrategies: [],
       researchSamples: [],
       questionSets: [],
+      planTargets: [],
       companies: [],
       plans: [],
       records: [],
