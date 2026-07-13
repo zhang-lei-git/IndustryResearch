@@ -952,6 +952,40 @@ label {
   margin-top: 12px;
 }
 
+.question-set-list {
+  display: grid;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.question-set-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfdff;
+  padding: 10px 12px;
+}
+
+.question-set-card > button:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 0;
+  text-align: left;
+  cursor: pointer;
+}
+
+.question-set-card span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .chain-workspace {
   overflow: hidden;
 }

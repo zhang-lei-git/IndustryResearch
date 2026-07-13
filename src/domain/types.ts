@@ -20,6 +20,7 @@ export type ResearchCompany = {
 export type ResearchPlan = {
   id: string;
   workspaceId: string;
+  taskId?: string;
   companyIds: string[];
   date: string;
   owner: string;
@@ -43,6 +44,7 @@ export type ResearchRecord = {
   id: string;
   workspaceId: string;
   planId?: string;
+  planTargetId?: string;
   companyId: string;
   date: string;
   interviewer: string;
@@ -52,6 +54,75 @@ export type ResearchRecord = {
   audioUrl?: string;
   needs: NeedItem[];
   conclusion: string;
+};
+
+export type ResearchTask = {
+  id: string;
+  workspaceId: string;
+  name: string;
+  objective: string;
+  topicIds: string[];
+  owner: string;
+  startAt: string;
+  endAt: string;
+  status: "草稿" | "进行中" | "已完成" | "已归档";
+};
+
+export type SamplingStrategy = {
+  id: string;
+  taskId: string;
+  companyTypeKeywords: string[];
+  chainPositionKeywords: string[];
+  scaleKeywords: string[];
+  intelligenceTypes: string[];
+  createdAt: string;
+};
+
+export type ResearchSample = {
+  id: string;
+  taskId: string;
+  companyId: string;
+  sampleRole: string;
+  selectionReason: string;
+  priority: "高" | "中" | "低";
+  status: "候选" | "已选定" | "已计划" | "已完成" | "需复访" | "已排除";
+  snapshotAt: string;
+};
+
+export type QuestionSetItem = {
+  id: string;
+  category: string;
+  content: string;
+  basis: string;
+  order: number;
+};
+
+export type QuestionSet = {
+  id: string;
+  workspaceId: string;
+  taskId?: string;
+  companyId: string;
+  name: string;
+  focus: string;
+  version: number;
+  status: "草稿" | "已冻结" | "已归档";
+  generatedAt: string;
+  frozenAt?: string;
+  items: QuestionSetItem[];
+};
+
+export type PlanTarget = {
+  id: string;
+  planId: string;
+  sampleId?: string;
+  companyId: string;
+  questionSetId?: string;
+  questionSnapshot: string[];
+  scheduledAt: string;
+  durationMinutes?: number;
+  method: string;
+  owner: string;
+  status: "待安排" | "已预约" | "待执行" | "执行中" | "已完成" | "已取消";
 };
 
 export type Capability = {
@@ -136,6 +207,10 @@ export type AppState = {
   activeWorkspaceId: string;
   topics: ResearchTopic[];
   hypotheses: ResearchHypothesis[];
+  researchTasks: ResearchTask[];
+  samplingStrategies: SamplingStrategy[];
+  researchSamples: ResearchSample[];
+  questionSets: QuestionSet[];
   companies: ResearchCompany[];
   plans: ResearchPlan[];
   records: ResearchRecord[];

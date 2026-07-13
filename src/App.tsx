@@ -42,11 +42,13 @@ import type {
   NeedPriority,
   NeedStatus,
   PolicyRecord,
+  QuestionSet,
   QuestionTemplate,
   ResearchCompany,
   ResearchHypothesis,
   ResearchPlan,
   ResearchRecord,
+  ResearchTask,
   ResearchTopic,
   Workspace
 } from "./domain/types";
@@ -74,6 +76,10 @@ const initialState: AppState = {
   activeWorkspaceId: YANLIANG_WORKSPACE_ID,
   topics: [],
   hypotheses: [],
+  researchTasks: [],
+  samplingStrategies: [],
+  researchSamples: [],
+  questionSets: [],
   companies: [],
   plans: [],
   records: [],
@@ -974,8 +980,11 @@ function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedComp
   const selectedCompany = state.companies.find((company) => company.id === selectedCompanyId) ?? state.companies[0];
   const [editingTemplate, setEditingTemplate] = useState<QuestionTemplate>(emptyTemplate());
   const [draftQuestions, setDraftQuestions] = useState<string[]>(() => selectedCompany ? buildResearchQuestions(selectedCompany, state) : []);
+  const [questionSetName, setQuestionSetName] = useState("");
+  const [questionSetFocus, setQuestionSetFocus] = useState("首访画像与数字化需求");
   const generated = selectedCompany ? buildResearchQuestions(selectedCompany, state) : [];
   const companyIntelligence = selectedCompany ? state.intelligence.filter((item) => intelligenceBelongsToCompany(item, selectedCompany.id) && intelligenceIsRelevant(item)) : [];
+  const savedQuestionSets = selectedCompany ? state.questionSets.filter((item) => item.companyId === selectedCompany.id).sort((a, b) => b.generatedAt.localeCompare(a.generatedAt)) : [];
 
   function refreshQuestions() {
     if (!selectedCompany) return;
@@ -1017,6 +1026,44 @@ function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedComp
     });
   }
 
+  function saveQuestionSet() {
+    if (!selectedCompany || !draftQuestions.length || !questionSetName.trim()) return;
+    const task = state.researchTasks.find((item) => item.workspaceId === selectedCompany.workspaceId && item.status === "进行中") ?? state.researchTasks.find((item) => item.workspaceId === selectedCompany.workspaceId);
+    const questionSet: QuestionSet = {
+      id: uid(),
+      workspaceId: selectedCompany.workspaceId,
+      taskId: task?.id,
+      companyId: selectedCompany.id,
+      name: questionSetName.trim(),
+      focus: questionSetFocus.trim(),
+      version: 1,
+      status: "草稿",
+      generatedAt: new Date().toISOString().slice(0, 10),
+      items: draftQuestions.map((content, index) => ({
+        id: uid(),
+        category: "调研问题",
+        content,
+        basis: "企业画像、问题模板、关联情报与专题",
+        order: index + 1
+      }))
+    };
+    setState({ ...state, questionSets: [...state.questionSets, questionSet] });
+    setQuestionSetName("");
+  }
+
+  function loadQuestionSet(questionSet: QuestionSet) {
+    setDraftQuestions(questionSet.items.sort((a, b) => a.order - b.order).map((item) => item.content));
+    setQuestionSetName(questionSet.name);
+    setQuestionSetFocus(questionSet.focus);
+  }
+
+  function freezeQuestionSet(questionSetId: string) {
+    setState({
+      ...state,
+      questionSets: state.questionSets.map((item) => item.id === questionSetId ? { ...item, status: "已冻结", frozenAt: new Date().toISOString().slice(0, 10) } : item)
+    });
+  }
+
   return (
     <div className="grid two">
       <Panel title="按企业生成调研问题">
@@ -1038,11 +1085,15 @@ function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedComp
         </div>
         <div className="drawer-actions-inline">
           <button className="button secondary" type="button" onClick={refreshQuestions}><Sparkles size={16} /> 重新生成</button>
+          <Field label="问题组名称" value={questionSetName} onChange={setQuestionSetName} />
+          <Field label="本次调研重点" value={questionSetFocus} onChange={setQuestionSetFocus} />
+          <button className="button secondary" type="button" onClick={saveQuestionSet}><ClipboardList size={16} /> 保存问题组</button>
           <button className="button" type="button" onClick={saveAsPlan}><CheckCircle2 size={16} /> 保存为调研计划</button>
         </div>
       </Panel>
 
       <Panel title="问题模板库">
+        {savedQuestionSets.length ? <div className="question-set-list">{savedQuestionSets.map((item) => <div className="question-set-card" key={item.id}><button type="button" onClick={() => loadQuestionSet(item)}><strong>{item.name}</strong><span>{item.focus} / v{item.version} / {item.status}</span></button>{item.status === "草稿" ? <button className="text-button" type="button" onClick={() => freezeQuestionSet(item.id)}>冻结版本</button> : null}</div>)}</div> : <div className="empty-stage">当前企业尚无已保存问题组。</div>}
         <div className="template-editor">
           <div className="form-grid">
             <Field label="问题分类" value={editingTemplate.category} onChange={(category) => setEditingTemplate({ ...editingTemplate, category })} />
@@ -1437,6 +1488,10 @@ function mergeYanliangCompanies(state: AppState): AppState {
     : workspaces[0]?.id ?? YANLIANG_WORKSPACE_ID;
   const topics = state.topics?.length ? state.topics : defaultYanliangTopics();
   const hypotheses = state.hypotheses?.length ? state.hypotheses : defaultYanliangHypotheses();
+  const researchTasks = state.researchTasks?.length ? state.researchTasks : defaultYanliangResearchTasks(activeWorkspaceId, topics);
+  const samplingStrategies = state.samplingStrategies ?? [];
+  const researchSamples = state.researchSamples ?? [];
+  const questionSets = state.questionSets ?? [];
   const policies = state.policies?.length ? state.policies.map((policy) => ({
     ...emptyPolicy(),
     ...policy,
@@ -1493,7 +1548,7 @@ function mergeYanliangCompanies(state: AppState): AppState {
     }));
   const sampleCompany = companies.find((company) => company.name === "西安泽达航空制造有限责任公司") ?? companies.find((company) => company.region.includes("阎良"));
   if (!sampleCompany || records.some((record) => record.id === "yanliang-sample-record")) {
-    return { ...state, dataVersion: STATE_VERSION, workspaces, activeWorkspaceId, topics, hypotheses, policies, intelligence, companies, plans, records, questionTemplates };
+    return { ...state, dataVersion: STATE_VERSION, workspaces, activeWorkspaceId, topics, hypotheses, researchTasks, samplingStrategies, researchSamples, questionSets, policies, intelligence, companies, plans, records, questionTemplates };
   }
   return {
     ...state,
@@ -1502,6 +1557,10 @@ function mergeYanliangCompanies(state: AppState): AppState {
     activeWorkspaceId,
     topics,
     hypotheses,
+    researchTasks,
+    samplingStrategies,
+    researchSamples,
+    questionSets,
     policies,
     intelligence,
     questionTemplates,
@@ -1616,6 +1675,20 @@ function defaultYanliangHypotheses(): ResearchHypothesis[] {
       status: "待验证"
     }
   ];
+}
+
+function defaultYanliangResearchTasks(workspaceId: string, topics: ResearchTopic[]): ResearchTask[] {
+  return [{
+    id: "task-yanliang-digital-demand-2026",
+    workspaceId,
+    name: "阎良航空制造数字化需求试点调研",
+    objective: "选取代表性企业，验证区域协同、质量证据链和政策杠杆相关假设，形成可复盘的首轮调研闭环。",
+    topicIds: topics.map((topic) => topic.id),
+    owner: "我",
+    startAt: new Date().toISOString().slice(0, 10),
+    endAt: "",
+    status: "进行中"
+  }];
 }
 
 function isYanliangCompany(company: ResearchCompany) {
