@@ -20,7 +20,7 @@ export type ResearchCompany = {
 export type ResearchPlan = {
   id: string;
   workspaceId: string;
-  companyId: string;
+  companyIds: string[];
   date: string;
   owner: string;
   objective: string;
@@ -42,6 +42,7 @@ export type NeedItem = {
 export type ResearchRecord = {
   id: string;
   workspaceId: string;
+  planId?: string;
   companyId: string;
   date: string;
   interviewer: string;

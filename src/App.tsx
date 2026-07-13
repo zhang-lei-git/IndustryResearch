@@ -1004,7 +1004,7 @@ function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedComp
         {
           id: uid(),
           workspaceId: selectedCompany.workspaceId,
-          companyId: selectedCompany.id,
+          companyIds: [selectedCompany.id],
           date: new Date().toISOString().slice(0, 10),
           owner: "我",
           objective: `围绕企业类型“${selectedCompany.companyType}”和产业链位置“${selectedCompany.chainPosition}”开展调研：\n${draftQuestions.map((item, index) => `${index + 1}. ${item}`).join("\n")}`,
@@ -1097,18 +1097,29 @@ function recommendedFocus(company: ResearchCompany) {
 function Plans({ state, setState }: { state: AppState; setState: (state: AppState) => void }) {
   const [draft, setDraft] = useState<Omit<ResearchPlan, "id">>({
     workspaceId: state.activeWorkspaceId,
-    companyId: state.companies[0]?.id ?? "",
+    companyIds: [],
     date: new Date().toISOString().slice(0, 10),
     owner: "我",
     objective: "了解企业数字化现状、关键痛点、近期建设计划和可匹配能力。",
     status: "计划中"
   });
-  const selectedCompany = state.companies.find((company) => company.id === draft.companyId);
-  const preparedQuestions = selectedCompany ? buildResearchQuestions(selectedCompany, state) : [];
-  const linkedIntelligence = selectedCompany ? state.intelligence.filter((item) => intelligenceBelongsToCompany(item, selectedCompany.id) && intelligenceIsRelevant(item)) : [];
+  const selectedCompanies = state.companies.filter((company) => draft.companyIds.includes(company.id));
+  const preparedQuestions = Array.from(new Set(selectedCompanies.flatMap((company) => buildResearchQuestions(company, state)))).slice(0, 18);
+  const linkedIntelligence = state.intelligence.filter((item) => item.companyIds.some((companyId) => draft.companyIds.includes(companyId)) && intelligenceIsRelevant(item));
+  const [recommendation, setRecommendation] = useState({ type: "", position: "", scale: "" });
+
+  function recommendCompanies() {
+    const matches = state.companies.filter((company) => {
+      const typeMatches = !recommendation.type || company.companyType.includes(recommendation.type);
+      const positionMatches = !recommendation.position || company.chainPosition.includes(recommendation.position);
+      const scaleMatches = !recommendation.scale || company.scale.includes(recommendation.scale);
+      return typeMatches && positionMatches && scaleMatches && company.workspaceId === state.activeWorkspaceId;
+    });
+    setDraft({ ...draft, companyIds: matches.map((company) => company.id) });
+  }
 
   function createPlan() {
-    if (!draft.companyId) return;
+    if (!draft.companyIds.length) return;
     setState({
       ...state,
       plans: [...state.plans, {
@@ -1125,27 +1136,33 @@ function Plans({ state, setState }: { state: AppState; setState: (state: AppStat
     <div className="grid two">
       <Panel title="制定调研计划">
         <div className="form-grid">
-          <label>调研企业<select value={draft.companyId} onChange={(event) => {
-            const company = state.companies.find((item) => item.id === event.target.value);
-            setDraft({ ...draft, companyId: event.target.value, workspaceId: company?.workspaceId ?? state.activeWorkspaceId });
-          }}>{state.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></label>
           <Field label="调研日期" type="date" value={draft.date} onChange={(date) => setDraft({ ...draft, date })} />
           <Field label="负责人" value={draft.owner} onChange={(owner) => setDraft({ ...draft, owner })} />
           <label>状态<select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as ResearchPlan["status"] })}><option>计划中</option><option>已完成</option></select></label>
         </div>
+        <div className="plan-recommendation">
+          <strong>按样本特征推荐企业</strong>
+          <div className="form-grid">
+            <Field label="企业类型关键词" value={recommendation.type} onChange={(type) => setRecommendation({ ...recommendation, type })} />
+            <Field label="产业位置关键词" value={recommendation.position} onChange={(position) => setRecommendation({ ...recommendation, position })} />
+            <Field label="规模关键词" value={recommendation.scale} onChange={(scale) => setRecommendation({ ...recommendation, scale })} />
+          </div>
+          <button className="button secondary" type="button" onClick={recommendCompanies}><Sparkles size={16} /> 推荐并选中企业</button>
+        </div>
+        <label>本次调研企业<select multiple value={draft.companyIds} onChange={(event) => setDraft({ ...draft, companyIds: Array.from(event.currentTarget.selectedOptions, (option) => option.value) })}>{state.companies.filter((company) => company.workspaceId === state.activeWorkspaceId).map((company) => <option key={company.id} value={company.id}>{company.name} / {company.companyType} / {company.chainPosition}</option>)}</select></label>
         <label>调研目标<textarea value={draft.objective} onChange={(event) => setDraft({ ...draft, objective: event.target.value })} /></label>
         <button className="button" type="button" onClick={createPlan}><CalendarDays size={16} /> 生成计划</button>
       </Panel>
       <Panel title="当前调研准备包">
         <div className="question-list">
           {preparedQuestions.map((question, index) => <div className="question" key={question}><strong>{index + 1}</strong><span>{question}</span></div>)}
-          {!preparedQuestions.length ? <div className="empty-stage">请选择企业后生成调研问题。</div> : null}
+          {!preparedQuestions.length ? <div className="empty-stage">选择一组企业后，会按其类型、产业位置和已关联动态生成准备问题。</div> : null}
         </div>
         {linkedIntelligence.length ? <div className="research-context"><strong>本次计划将关联动态情报</strong>{linkedIntelligence.map((item) => <span key={item.id}>{item.type}：{item.title}</span>)}</div> : null}
       </Panel>
       <Panel title="计划列表">
         <div className="card-list">
-          {state.plans.map((plan) => <PlanCard key={plan.id} plan={plan} company={state.companies.find((company) => company.id === plan.companyId)} />)}
+          {state.plans.map((plan) => <PlanCard key={plan.id} plan={plan} companies={state.companies.filter((company) => plan.companyIds.includes(company.id))} />)}
         </div>
       </Panel>
     </div>
@@ -1154,6 +1171,7 @@ function Plans({ state, setState }: { state: AppState; setState: (state: AppStat
 
 function Records({ state, setState, selectedCompanyId }: { state: AppState; setState: (state: AppState) => void; selectedCompanyId: string }) {
   const [companyId, setCompanyId] = useState(selectedCompanyId);
+  const [planId, setPlanId] = useState("");
   const [summary, setSummary] = useState("");
   const [transcript, setTranscript] = useState("");
   const [conclusion, setConclusion] = useState("");
@@ -1179,6 +1197,7 @@ function Records({ state, setState, selectedCompanyId }: { state: AppState; setS
     const record: ResearchRecord = {
       id: uid(),
       workspaceId: state.companies.find((company) => company.id === companyId)?.workspaceId ?? state.activeWorkspaceId,
+      planId: planId || undefined,
       companyId,
       date: new Date().toISOString().slice(0, 10),
       interviewer: "我",
@@ -1222,7 +1241,13 @@ function Records({ state, setState, selectedCompanyId }: { state: AppState; setS
         if (file) void uploadAudio(file);
       }} /></label>}>
         <div className="form-grid">
-          <label>调研企业<select value={companyId} onChange={(event) => setCompanyId(event.target.value)}>{state.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></label>
+          <label>所属调研计划<select value={planId} onChange={(event) => {
+            const nextPlanId = event.target.value;
+            const plan = state.plans.find((item) => item.id === nextPlanId);
+            setPlanId(nextPlanId);
+            if (plan?.companyIds.length && !plan.companyIds.includes(companyId)) setCompanyId(plan.companyIds[0]);
+          }}><option value="">独立调研记录</option>{state.plans.filter((plan) => plan.workspaceId === state.activeWorkspaceId).map((plan) => <option key={plan.id} value={plan.id}>{plan.date} / {plan.owner} / {plan.companyIds.length} 家企业</option>)}</select></label>
+          <label>调研企业<select value={companyId} onChange={(event) => setCompanyId(event.target.value)}>{state.companies.filter((company) => !planId || state.plans.find((plan) => plan.id === planId)?.companyIds.includes(company.id)).map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></label>
           <Field label="访谈人" value="我" onChange={() => undefined} />
         </div>
         {audio ? <div className="audio-card"><FileAudio size={18} /><span>{audio.name}</span><audio controls src={audio.url} /></div> : null}
@@ -1341,8 +1366,9 @@ function Field({ label, value, onChange, type = "text" }: { label: string; value
   return <label>{label}<input type={type} value={value} onChange={(event) => onChange(event.target.value)} /></label>;
 }
 
-function PlanCard({ plan, company }: { plan: ResearchPlan; company?: ResearchCompany }) {
-  return <div className="data-card"><strong>{company?.name ?? "-"}</strong><span>{plan.date} / {plan.owner} / {plan.status}{plan.questionSnapshot?.length ? ` / 问题 ${plan.questionSnapshot.length} 条` : ""}</span><p>{plan.objective}</p></div>;
+function PlanCard({ plan, companies }: { plan: ResearchPlan; companies: ResearchCompany[] }) {
+  const companyLabel = companies.length ? `${companies[0].name}${companies.length > 1 ? ` 等 ${companies.length} 家` : ""}` : "企业待补充";
+  return <div className="data-card"><strong>{companyLabel}</strong><span>{plan.date} / {plan.owner} / {plan.status}{plan.questionSnapshot?.length ? ` / 问题 ${plan.questionSnapshot.length} 条` : ""}</span><p>{plan.objective}</p></div>;
 }
 
 function RecordCard({ record, company }: { record: ResearchRecord; company?: ResearchCompany }) {
@@ -1448,8 +1474,16 @@ function mergeYanliangCompanies(state: AppState): AppState {
   const companies = additions.length ? [...dedupedCompanies, ...additions] : dedupedCompanies;
   const workspaceByCompanyId = new Map(companies.map((company) => [company.id, company.workspaceId]));
   const plans = (state.plans ?? [])
-    .filter((plan) => workspaceByCompanyId.has(plan.companyId))
-    .map((plan) => ({ ...plan, workspaceId: plan.workspaceId ?? workspaceByCompanyId.get(plan.companyId) ?? YANLIANG_WORKSPACE_ID }));
+    .map((plan) => {
+      const legacyPlan = plan as ResearchPlan & { companyId?: string };
+      const companyIds = (legacyPlan.companyIds?.length ? legacyPlan.companyIds : legacyPlan.companyId ? [legacyPlan.companyId] : []).filter((companyId) => workspaceByCompanyId.has(companyId));
+      return {
+        ...legacyPlan,
+        companyIds,
+        workspaceId: legacyPlan.workspaceId ?? workspaceByCompanyId.get(companyIds[0] ?? "") ?? YANLIANG_WORKSPACE_ID
+      };
+    })
+    .filter((plan) => plan.companyIds.length);
   const records = (state.records ?? [])
     .filter((record) => workspaceByCompanyId.has(record.companyId))
     .map((record) => ({
@@ -1477,7 +1511,7 @@ function mergeYanliangCompanies(state: AppState): AppState {
       {
         id: "yanliang-sample-plan",
         workspaceId: sampleCompany.workspaceId,
-        companyId: sampleCompany.id,
+        companyIds: [sampleCompany.id],
         date: new Date().toISOString().slice(0, 10),
         owner: "我",
         objective: "验证阎良区航空制造企业调研闭环，重点了解设备数据采集、质量追溯、生产执行和数字化规划需求。",
