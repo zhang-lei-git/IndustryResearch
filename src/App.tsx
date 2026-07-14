@@ -1053,6 +1053,8 @@ function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; 
   const [manualScale, setManualScale] = useState("");
   const [recommendationMessage, setRecommendationMessage] = useState("");
   const samples = state.researchSamples.filter((item) => item.taskId === taskId);
+  const recommendations = samples.filter((item) => item.status === "候选");
+  const researchObjects = samples.filter((item) => item.status !== "候选" && item.status !== "已排除");
   const sampledCompanyIds = new Set(samples.map((item) => item.companyId));
   const candidates = state.companies.filter((company) => company.workspaceId === state.activeWorkspaceId);
   const companyTypes = Array.from(new Set(candidates.map((company) => company.companyType).filter(Boolean))).sort();
@@ -1180,7 +1182,7 @@ function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; 
         snapshotAt: new Date().toISOString().slice(0, 10)
       }));
     setRecommendationMessage(matches.length
-      ? `已匹配 ${matches.length} 家企业，其中新增 ${newSamples.length} 家到本项目调研对象。`
+      ? `已匹配 ${matches.length} 家企业，其中新增 ${newSamples.length} 家推荐企业。请从推荐结果中选择需要加入本轮调研的企业。`
       : "当前条件下没有匹配企业，请调整企业角色、产业链环节或规模条件。");
     setState({
       ...state,
@@ -1224,6 +1226,13 @@ function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; 
     setState({ ...state, researchSamples: state.researchSamples.filter((item) => item.id !== sample.id) });
   }
 
+  function addRecommendationToObjects(sampleId: string) {
+    setState({
+      ...state,
+      researchSamples: state.researchSamples.map((item) => item.id === sampleId ? { ...item, status: "已选定" as const, sampleRole: "调研对象" } : item)
+    });
+  }
+
   return (
     mode === "project" ? (
       <div className="grid">
@@ -1264,7 +1273,7 @@ function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; 
         </Panel>
         <Panel title="项目概览">
           <div className="detail-grid">
-            <DetailItem label="调研对象" value={`${samples.filter((item) => item.status !== "已排除").length} 家`} />
+            <DetailItem label="调研对象" value={`${researchObjects.length} 家`} />
             <DetailItem label="已制定计划" value={`${state.plans.filter((plan) => plan.taskId === taskId).length} 个`} />
             <DetailItem label="已完成记录" value={`${state.records.filter((record) => state.plans.find((plan) => plan.id === record.planId)?.taskId === taskId).length} 条`} />
             <DetailItem label="关联专题" value={`${draft.topicIds.length} 个`} />
@@ -1295,25 +1304,41 @@ function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; 
         {!task ? <p className="muted-text">请选择调研项目后再设置条件。</p> : <p className="muted-text">例如选择“检验检测/试验验证”，系统会匹配企业名称、行业和产业链信息中包含检验、检测、试验、强度或适航的企业。</p>}
         {recommendationMessage ? <p className="field-warning">{recommendationMessage}</p> : null}
         <div className="research-context">
-          <strong>本项目调研对象</strong>
-          <span>待确认 {samples.filter((item) => item.status === "候选").length} 家；已确认 {samples.filter((item) => item.status === "已选定").length} 家；已安排 {samples.filter((item) => item.status === "已计划").length} 家；已完成 {samples.filter((item) => item.status === "已完成").length} 家。</span>
+          <strong>本轮调研进度</strong>
+          <span>推荐企业 {recommendations.length} 家；调研对象 {researchObjects.length} 家；已安排 {samples.filter((item) => item.status === "已计划").length} 家；已完成 {samples.filter((item) => item.status === "已完成").length} 家。</span>
         </div>
       </Panel>
 
-      <Panel title="推荐结果与已选对象">
+      <Panel title="推荐结果">
         <div className="sample-list">
-          {samples.map((sample) => {
+          {recommendations.map((sample) => {
+            const company = state.companies.find((item) => item.id === sample.companyId);
+            return <div className="sample-row" key={sample.id}>
+              <div><strong>{company?.name || "企业待补充"}</strong><span>{company?.companyType} / {company?.chainPosition} / {company?.scale}</span><small>{sample.selectionReason}</small></div>
+              <div className="sample-controls">
+                <button className="button secondary" type="button" onClick={() => addRecommendationToObjects(sample.id)}><Plus size={16} /> 加入调研对象</button>
+                <button className="icon-button danger-outline" type="button" title="移除推荐企业" onClick={() => deleteSample(sample)}><X size={16} /></button>
+              </div>
+            </div>;
+          })}
+          {!recommendations.length ? <div className="empty-stage">暂无待处理的推荐企业。设置条件后点击“推荐调研对象”。</div> : null}
+        </div>
+      </Panel>
+
+      <Panel title="本轮调研对象">
+        <div className="sample-list">
+          {researchObjects.map((sample) => {
             const company = state.companies.find((item) => item.id === sample.companyId);
             return <div className="sample-row" key={sample.id}>
               <div><strong>{company?.name || "企业待补充"}</strong><span>{company?.companyType} / {company?.chainPosition} / {company?.scale}</span><small>{sample.selectionReason}</small></div>
               <div className="sample-controls">
                 <label>优先级<select value={sample.priority} onChange={(event) => updateSample(sample.id, { priority: event.target.value as ResearchSample["priority"] })}><option>高</option><option>中</option><option>低</option></select></label>
-                <label>调研状态<select value={sample.status} onChange={(event) => updateSample(sample.id, { status: event.target.value as ResearchSample["status"] })}><option value="候选">待确认</option><option value="已选定">已确认</option><option value="已计划">已安排</option><option value="已完成">已完成</option><option value="需复访">需复访</option><option value="已排除">不纳入本轮</option></select></label>
+                <label>调研状态<select value={sample.status} onChange={(event) => updateSample(sample.id, { status: event.target.value as ResearchSample["status"] })}><option value="已选定">已确认</option><option value="已计划">已安排</option><option value="已完成">已完成</option><option value="需复访">需复访</option><option value="已排除">不纳入本轮</option></select></label>
                 <button className="icon-button danger-outline" type="button" title="移除调研对象" onClick={() => deleteSample(sample)}><X size={16} /></button>
               </div>
             </div>;
           })}
-          {!samples.length ? <div className="empty-stage">尚未推荐调研对象。设置条件后点击“推荐调研对象”，也可以手动从企业库补充。</div> : null}
+          {!researchObjects.length ? <div className="empty-stage">尚未加入调研对象。可从上方推荐结果选择，或从企业库手动补充。</div> : null}
         </div>
       </Panel>
 
