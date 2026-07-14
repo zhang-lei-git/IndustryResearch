@@ -1246,9 +1246,8 @@ label {
 
 .outline-actions {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 12px;
-  align-items: end;
+  grid-template-columns: 1fr;
+  gap: 14px;
   margin-top: 14px;
 }
 
@@ -1269,6 +1268,8 @@ label {
 
 .outline-action-buttons {
   justify-content: flex-end;
+  border-top: 1px solid var(--line);
+  padding-top: 14px;
 }
 
 .record-actions {
