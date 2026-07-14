@@ -1566,8 +1566,9 @@ function Plans({ state, setState }: { state: AppState; setState: (state: AppStat
   const [owner, setOwner] = useState("我");
   const [objective, setObjective] = useState("了解企业数字化现状、关键痛点、近期建设计划和可匹配能力。");
   const [validation, setValidation] = useState("");
-  const eligibleSamples = state.researchSamples.filter((item) => item.taskId === taskId && sampleCanBePlanned(item));
-  const selectedSamples = eligibleSamples.filter((item) => selectedSampleIds.includes(item.id));
+  const projectObjects = state.researchSamples.filter((item) => item.taskId === taskId && item.status !== "候选" && item.status !== "已排除");
+  const schedulableObjects = projectObjects.filter(sampleCanBePlanned);
+  const selectedSamples = schedulableObjects.filter((item) => selectedSampleIds.includes(item.id));
   const selectedCompanyIds = selectedSamples.map((item) => item.companyId);
   const linkedIntelligence = state.intelligence.filter((item) => item.companyIds.some((companyId) => selectedCompanyIds.includes(companyId)) && intelligenceIsRelevant(item));
 
@@ -1697,7 +1698,7 @@ function Plans({ state, setState }: { state: AppState; setState: (state: AppStat
           </div>
           <label>计划目标<textarea value={objective} onChange={(event) => setObjective(event.target.value)} /></label>
           <div className="sample-list">
-            {eligibleSamples.map((sample) => {
+            {schedulableObjects.map((sample) => {
               const company = state.companies.find((item) => item.id === sample.companyId);
               const selected = selectedSampleIds.includes(sample.id);
               return <label className={`sample-select ${selected ? "selected" : ""}`} key={sample.id}>
@@ -1705,7 +1706,8 @@ function Plans({ state, setState }: { state: AppState; setState: (state: AppStat
                 <span><strong>{company?.name || "企业待补充"}</strong><small>{company?.companyType} / {company?.chainPosition} / {sample.priority}优先级</small></span>
               </label>;
             })}
-            {task && !eligibleSamples.length ? <div className="empty-stage">本项目还没有已确认的调研对象，请先在“调研对象”中确认企业。</div> : null}
+            {task ? <div className="research-context"><strong>本轮调研对象</strong><span>共 {projectObjects.length} 家，其中可安排 {schedulableObjects.length} 家；此处只展示并安排已确认的调研对象。</span></div> : null}
+            {task && !schedulableObjects.length ? <div className="empty-stage">本项目还没有可安排的调研对象，请先在“调研对象”中确认企业。</div> : null}
           </div>
         </Panel>
 
