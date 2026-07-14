@@ -609,6 +609,11 @@ label {
   color: var(--brand-dark);
 }
 
+.button.danger {
+  background: #dc2626;
+  color: #fff;
+}
+
 .icon-button {
   width: 36px;
   height: 36px;
@@ -623,6 +628,16 @@ label {
 .icon-button:hover {
   color: var(--brand-dark);
   background: #eaf1ff;
+}
+
+.icon-button.danger-outline {
+  border-color: #fecaca;
+  color: #dc2626;
+}
+
+.icon-button.danger-outline:hover {
+  background: #fef2f2;
+  color: #b91c1c;
 }
 
 .file-button {
@@ -1177,6 +1192,45 @@ label {
   flex-wrap: wrap;
 }
 
+.outline-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: end;
+  margin-top: 14px;
+}
+
+.outline-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(180px, 1fr));
+  gap: 12px;
+}
+
+.outline-action-buttons,
+.inline-actions,
+.record-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.outline-action-buttons {
+  justify-content: flex-end;
+}
+
+.record-actions {
+  margin-top: 12px;
+}
+
+.outline-action-buttons .button,
+.record-actions .button,
+.inline-actions .button {
+  flex: 0 0 auto;
+  min-height: 40px;
+  font-size: 14px;
+}
+
 .template-editor {
   display: grid;
   gap: 14px;
@@ -1198,6 +1252,27 @@ label {
   padding: 12px;
   color: var(--ink);
   text-align: left;
+}
+
+.template-row {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.template-main {
+  display: grid;
+  grid-template-columns: 90px minmax(0, 1fr) minmax(120px, 0.38fr);
+  gap: 10px;
+  align-items: center;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--ink);
+  padding: 0;
+  text-align: left;
+}
+
+.compact-filters {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
 .template-row:hover {
@@ -1810,6 +1885,17 @@ label {
   .archive-filters,
   .plan-target-row {
     grid-template-columns: 1fr;
+  }
+
+  .outline-actions,
+  .outline-fields,
+  .compact-filters,
+  .template-main {
+    grid-template-columns: 1fr;
+  }
+
+  .outline-action-buttons {
+    justify-content: flex-start;
   }
 
   .sample-row,
