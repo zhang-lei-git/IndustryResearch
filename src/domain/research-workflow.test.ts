@@ -45,6 +45,11 @@ describe("research workflow rules", () => {
     expect(findFrozenQuestionSet(sets, "company-1", "task-1", "old")?.id).toBe("old");
   });
 
+  it("allows a project-wide frozen outline to be reused by different companies", () => {
+    const general = { ...questionSet("general", "已冻结", "2026-07-06"), companyId: "" };
+    expect(findFrozenQuestionSet([general], "company-2", "task-1")?.id).toBe("general");
+  });
+
   it("allows only one record for a runnable plan target", () => {
     const target: PlanTarget = {
       id: "target-1",

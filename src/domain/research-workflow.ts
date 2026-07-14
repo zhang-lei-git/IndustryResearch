@@ -8,7 +8,7 @@ export function findFrozenQuestionSet(questionSets: QuestionSet[], companyId: st
   const preferred = questionSets.find((item) => item.id === preferredId && item.status === "已冻结");
   if (preferred) return preferred;
   return questionSets
-    .filter((item) => item.companyId === companyId && item.status === "已冻结" && (!taskId || !item.taskId || item.taskId === taskId))
+    .filter((item) => (!item.companyId || item.companyId === companyId) && item.status === "已冻结" && (!taskId || !item.taskId || item.taskId === taskId))
     .sort((a, b) => (b.frozenAt || b.generatedAt).localeCompare(a.frozenAt || a.generatedAt))[0];
 }
 

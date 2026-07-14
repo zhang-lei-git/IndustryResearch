@@ -21,6 +21,7 @@ export type ResearchPlan = {
   id: string;
   workspaceId: string;
   taskId?: string;
+  name?: string;
   companyIds: string[];
   date: string;
   owner: string;
