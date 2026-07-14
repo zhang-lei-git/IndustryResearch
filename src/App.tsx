@@ -1045,6 +1045,7 @@ function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; 
     scale: "",
     intelligenceType: ""
   });
+  const [topicToLink, setTopicToLink] = useState("");
   const [manualCompanyId, setManualCompanyId] = useState("");
   const [manualKeyword, setManualKeyword] = useState("");
   const [manualType, setManualType] = useState("");
@@ -1126,6 +1127,16 @@ function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; 
       planTargets: state.planTargets.filter((item) => !taskPlanIds.has(item.planId))
     });
     selectTask(nextTasks.find((item) => item.workspaceId === state.activeWorkspaceId)?.id ?? "");
+  }
+
+  function linkTopic() {
+    if (!topicToLink || draft.topicIds.includes(topicToLink)) return;
+    setDraft({ ...draft, topicIds: [...draft.topicIds, topicToLink] });
+    setTopicToLink("");
+  }
+
+  function unlinkTopic(topicId: string) {
+    setDraft({ ...draft, topicIds: draft.topicIds.filter((item) => item !== topicId) });
   }
 
   function generateCandidates() {
@@ -1229,9 +1240,20 @@ function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; 
           </select></label>
           <Field label="开始日期" type="date" value={draft.startAt} onChange={(startAt) => setDraft({ ...draft, startAt })} />
           <Field label="截止日期" type="date" value={draft.endAt} onChange={(endAt) => setDraft({ ...draft, endAt })} />
-          <label>关联分析专题<select multiple value={draft.topicIds} onChange={(event) => setDraft({ ...draft, topicIds: Array.from(event.currentTarget.selectedOptions, (option) => option.value) })}>
-            {state.topics.filter((item) => item.workspaceId === state.activeWorkspaceId).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+        </div>
+        <div className="topic-linker">
+          <label>关联分析专题<select value={topicToLink} onChange={(event) => setTopicToLink(event.target.value)}>
+            <option value="">请选择要关联的专题</option>
+            {state.topics.filter((item) => item.workspaceId === state.activeWorkspaceId && !draft.topicIds.includes(item.id)).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select></label>
+          <button className="button secondary" type="button" disabled={!topicToLink} onClick={linkTopic}><Plus size={16} /> 关联专题</button>
+          <div className="topic-link-list">
+            {draft.topicIds.map((topicId) => {
+              const topic = state.topics.find((item) => item.id === topicId);
+              return <span className="topic-link-tag" key={topicId}>{topic?.name || "专题待补充"}<button type="button" title="解除关联" onClick={() => unlinkTopic(topicId)}><X size={14} /></button></span>;
+            })}
+            {!draft.topicIds.length ? <span className="muted-text">当前项目尚未关联分析专题。</span> : null}
+          </div>
         </div>
         <label>项目目标<textarea value={draft.objective} onChange={(event) => setDraft({ ...draft, objective: event.target.value })} /></label>
         <div className="form-actions">
