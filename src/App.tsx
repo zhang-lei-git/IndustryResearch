@@ -49,12 +49,15 @@ import type {
   ResearchHypothesis,
   ResearchPlan,
   ResearchRecord,
+  ResearchSample,
   ResearchTask,
   ResearchTopic,
+  SamplingStrategy,
   Workspace
 } from "./domain/types";
 import { intelligenceBelongsToCompany, intelligenceIsRelevant } from "./domain/intelligence";
 import { policyMatchesCompany } from "./domain/policy";
+import { addLegacyPlanTargets, canCreateRecord, findFrozenQuestionSet, sampleCanBePlanned } from "./domain/research-workflow";
 import { applyStateVersion, parseStoredState, STATE_VERSION } from "./state/persistence";
 
 const STORE_KEY = "manufacturing-research-system:v1";
@@ -223,9 +226,11 @@ export function App() {
             <NavItem icon={<Scale size={18} />} label="政策库与匹配" active={active === "policies"} onClick={() => setActive("policies")} />
           </NavGroup>
           <NavGroup label="调研工作">
-            <NavItem icon={<ClipboardList size={18} />} label="调研准备包" active={active === "questions"} onClick={() => setActive("questions")} />
-            <NavItem icon={<CalendarDays size={18} />} label="调研计划" active={active === "plans"} onClick={() => setActive("plans")} />
-            <NavItem icon={<Mic2 size={18} />} label="调研记录" active={active === "records"} onClick={() => setActive("records")} />
+            <NavItem icon={<Target size={18} />} label="任务与对象选样" active={active === "tasks"} onClick={() => setActive("tasks")} />
+            <NavItem icon={<ClipboardList size={18} />} label="问题准备" active={active === "questions"} onClick={() => setActive("questions")} />
+            <NavItem icon={<CalendarDays size={18} />} label="计划与执行" active={active === "plans"} onClick={() => setActive("plans")} />
+            <NavItem icon={<Mic2 size={18} />} label="执行记录" active={active === "records"} onClick={() => setActive("records")} />
+            <NavItem icon={<Search size={18} />} label="调研档案" active={active === "archives"} onClick={() => setActive("archives")} />
           </NavGroup>
           <NavGroup label="分析洞察">
             <NavItem icon={<Target size={18} />} label="研究专题" active={active === "research"} onClick={() => setActive("research")} />
@@ -255,10 +260,12 @@ export function App() {
         {active === "companies" ? <Companies state={state} setState={updateState} selectedCompanyId={selectedCompanyId} setSelectedCompanyId={setSelectedCompanyId} openCompanyProfile={openCompanyProfile} /> : null}
         {active === "intelligence" ? <IntelligenceCenter state={state} setState={updateState} openCompanyProfile={openCompanyProfile} /> : null}
         {active === "chain" ? <IndustryChainMap state={state} openCompanyProfile={openCompanyProfile} /> : null}
+        {active === "tasks" ? <ResearchTasks state={state} setState={updateState} /> : null}
         {active === "questions" ? <QuestionGenerator state={state} setState={updateState} selectedCompanyId={selectedCompanyId} setSelectedCompanyId={setSelectedCompanyId} /> : null}
         {active === "policies" ? <PolicyMatch state={state} setState={updateState} /> : null}
         {active === "plans" ? <Plans state={state} setState={updateState} /> : null}
         {active === "records" ? <Records state={state} setState={updateState} selectedCompanyId={selectedCompanyId} /> : null}
+        {active === "archives" ? <ResearchArchive state={state} /> : null}
         {active === "needs" ? <Needs state={state} setState={updateState} /> : null}
         {active === "advice" ? <Advice state={state} insights={insights} /> : null}
         {active === "knowledge" ? <KnowledgeAssets state={state} /> : null}
@@ -270,6 +277,10 @@ export function App() {
           company={profileCompany}
           policies={state.policies.filter((policy) => policyMatchesCompany(policy, profileCompany))}
           intelligence={state.intelligence.filter((item) => intelligenceBelongsToCompany(item, profileCompany.id))}
+          questionSets={state.questionSets.filter((item) => item.companyId === profileCompany.id)}
+          records={state.records.filter((item) => item.companyId === profileCompany.id)}
+          planTargets={state.planTargets.filter((item) => item.companyId === profileCompany.id)}
+          plans={state.plans}
           onClose={() => setProfileCompanyId(null)}
           onSave={saveProfileCompany}
         />
@@ -601,7 +612,7 @@ function Companies({ state, setState, selectedCompanyId, setSelectedCompanyId, o
   );
 }
 
-function CompanyProfileDrawer({ company, policies, intelligence, onClose, onSave }: { company: ResearchCompany; policies: PolicyRecord[]; intelligence: IntelligenceItem[]; onClose: () => void; onSave: (company: ResearchCompany) => void }) {
+function CompanyProfileDrawer({ company, policies, intelligence, questionSets, records, planTargets, plans, onClose, onSave }: { company: ResearchCompany; policies: PolicyRecord[]; intelligence: IntelligenceItem[]; questionSets: QuestionSet[]; records: ResearchRecord[]; planTargets: PlanTarget[]; plans: ResearchPlan[]; onClose: () => void; onSave: (company: ResearchCompany) => void }) {
   const [mode, setMode] = useState<"detail" | "edit">("detail");
   const [draft, setDraft] = useState(company);
 
@@ -622,7 +633,7 @@ function CompanyProfileDrawer({ company, policies, intelligence, onClose, onSave
           <button className="icon-button" type="button" onClick={onClose}><X size={18} /></button>
         </div>
         {mode === "detail" ? (
-          <CompanyDetail company={company} policies={policies} intelligence={intelligence} onEdit={() => {
+          <CompanyDetail company={company} policies={policies} intelligence={intelligence} questionSets={questionSets} records={records} planTargets={planTargets} plans={plans} onEdit={() => {
             setDraft(company);
             setMode("edit");
           }} />
@@ -634,7 +645,7 @@ function CompanyProfileDrawer({ company, policies, intelligence, onClose, onSave
   );
 }
 
-function CompanyDetail({ company, policies, intelligence, onEdit }: { company: ResearchCompany; policies: PolicyRecord[]; intelligence: IntelligenceItem[]; onEdit: () => void }) {
+function CompanyDetail({ company, policies, intelligence, questionSets, records, planTargets, plans, onEdit }: { company: ResearchCompany; policies: PolicyRecord[]; intelligence: IntelligenceItem[]; questionSets: QuestionSet[]; records: ResearchRecord[]; planTargets: PlanTarget[]; plans: ResearchPlan[]; onEdit: () => void }) {
   return (
     <div className="drawer-content">
       <div className="detail-grid">
@@ -689,6 +700,24 @@ function CompanyDetail({ company, policies, intelligence, onEdit }: { company: R
             </div>
           ))}
           {!policies.length ? <p>暂无自动匹配政策，建议补充企业类型、产业链位置后重新判断。</p> : null}
+        </div>
+      </section>
+      <section className="detail-section">
+        <h3>调研历史</h3>
+        <div className="tender-list">
+          {planTargets.map((target) => {
+            const plan = plans.find((item) => item.id === target.planId);
+            const questionSet = questionSets.find((item) => item.id === target.questionSetId);
+            const record = records.find((item) => item.planTargetId === target.id);
+            return <div className="tender-card" key={target.id}>
+              <div>
+                <strong>{target.scheduledAt} / {target.status}</strong>
+                <span>{plan?.objective || "调研目标待补充"} / {target.method || "方式待补充"}</span>
+              </div>
+              <p>{questionSet ? `问题组：${questionSet.name}` : `问题 ${target.questionSnapshot.length} 条`} {record ? `；已形成 ${record.needs.length} 条需求候选` : "；尚未形成记录"}</p>
+            </div>;
+          })}
+          {!planTargets.length ? <div className="empty-stage">该企业尚未纳入调研计划。</div> : null}
         </div>
       </section>
       <button className="button" type="button" onClick={onEdit}>编辑企业</button>
@@ -978,8 +1007,212 @@ function IntelligenceCenter({ state, setState, openCompanyProfile }: { state: Ap
   );
 }
 
+function ResearchTasks({ state, setState }: { state: AppState; setState: (state: AppState) => void }) {
+  const workspaceTasks = state.researchTasks.filter((item) => item.workspaceId === state.activeWorkspaceId);
+  const [taskId, setTaskId] = useState(workspaceTasks.find((item) => item.status === "进行中")?.id ?? workspaceTasks[0]?.id ?? "");
+  const task = workspaceTasks.find((item) => item.id === taskId);
+  const [draft, setDraft] = useState<Omit<ResearchTask, "id">>(() => task ? {
+    workspaceId: task.workspaceId,
+    name: task.name,
+    objective: task.objective,
+    topicIds: task.topicIds,
+    owner: task.owner,
+    startAt: task.startAt,
+    endAt: task.endAt,
+    status: task.status
+  } : emptyTask(state.activeWorkspaceId));
+  const [strategy, setStrategy] = useState({
+    type: "",
+    position: "",
+    scale: "",
+    intelligenceType: ""
+  });
+  const samples = state.researchSamples.filter((item) => item.taskId === taskId);
+  const sampledCompanyIds = new Set(samples.map((item) => item.companyId));
+  const candidates = state.companies.filter((company) => company.workspaceId === state.activeWorkspaceId);
+
+  function selectTask(nextTaskId: string) {
+    const next = workspaceTasks.find((item) => item.id === nextTaskId);
+    setTaskId(nextTaskId);
+    setDraft(next ? {
+      workspaceId: next.workspaceId,
+      name: next.name,
+      objective: next.objective,
+      topicIds: next.topicIds,
+      owner: next.owner,
+      startAt: next.startAt,
+      endAt: next.endAt,
+      status: next.status
+    } : emptyTask(state.activeWorkspaceId));
+  }
+
+  function createTask() {
+    const next = emptyTask(state.activeWorkspaceId);
+    setTaskId("");
+    setDraft(next);
+  }
+
+  function saveTask() {
+    if (!draft.name.trim()) return;
+    const nextTask: ResearchTask = {
+      ...draft,
+      id: taskId || uid(),
+      workspaceId: state.activeWorkspaceId,
+      name: draft.name.trim()
+    };
+    const exists = state.researchTasks.some((item) => item.id === nextTask.id);
+    setState({
+      ...state,
+      researchTasks: exists
+        ? state.researchTasks.map((item) => item.id === nextTask.id ? nextTask : item)
+        : [...state.researchTasks, nextTask]
+    });
+    setTaskId(nextTask.id);
+  }
+
+  function generateCandidates() {
+    if (!task) return;
+    const matches = candidates.filter((company) => {
+      const typeMatches = !strategy.type || company.companyType.includes(strategy.type);
+      const positionMatches = !strategy.position || company.chainPosition.includes(strategy.position);
+      const scaleMatches = !strategy.scale || company.scale.includes(strategy.scale);
+      const intelligenceMatches = !strategy.intelligenceType || state.intelligence.some((item) =>
+        item.companyIds.includes(company.id) && item.type === strategy.intelligenceType && intelligenceIsRelevant(item)
+      );
+      return typeMatches && positionMatches && scaleMatches && intelligenceMatches;
+    });
+    const strategyRecord: SamplingStrategy = {
+      id: uid(),
+      taskId: task.id,
+      companyTypeKeywords: splitTags(strategy.type),
+      chainPositionKeywords: splitTags(strategy.position),
+      scaleKeywords: splitTags(strategy.scale),
+      intelligenceTypes: strategy.intelligenceType ? [strategy.intelligenceType] : [],
+      createdAt: new Date().toISOString().slice(0, 10)
+    };
+    const newSamples: ResearchSample[] = matches
+      .filter((company) => !sampledCompanyIds.has(company.id))
+      .map((company) => ({
+        id: uid(),
+        taskId: task.id,
+        companyId: company.id,
+        sampleRole: "候选样本",
+        selectionReason: `匹配选样策略：${[
+          strategy.type && `企业类型=${strategy.type}`,
+          strategy.position && `产业位置=${strategy.position}`,
+          strategy.scale && `企业规模=${strategy.scale}`,
+          strategy.intelligenceType && `动态情报=${strategy.intelligenceType}`
+        ].filter(Boolean).join("；") || "区域企业池"}`,
+        priority: "中",
+        status: "候选",
+        snapshotAt: new Date().toISOString().slice(0, 10)
+      }));
+    setState({
+      ...state,
+      samplingStrategies: [...state.samplingStrategies, strategyRecord],
+      researchSamples: [...state.researchSamples, ...newSamples]
+    });
+  }
+
+  function addSample(companyId: string) {
+    if (!task || sampledCompanyIds.has(companyId)) return;
+    setState({
+      ...state,
+      researchSamples: [...state.researchSamples, {
+        id: uid(),
+        taskId: task.id,
+        companyId,
+        sampleRole: "人工补充样本",
+        selectionReason: "人工从企业库选择纳入本任务。",
+        priority: "中",
+        status: "已选定",
+        snapshotAt: new Date().toISOString().slice(0, 10)
+      }]
+    });
+  }
+
+  function updateSample(sampleId: string, patch: Partial<ResearchSample>) {
+    setState({
+      ...state,
+      researchSamples: state.researchSamples.map((item) => item.id === sampleId ? { ...item, ...patch } : item)
+    });
+  }
+
+  return (
+    <div className="grid two">
+      <Panel title="调研任务">
+        <div className="form-grid">
+          <label>当前任务<select value={taskId} onChange={(event) => selectTask(event.target.value)}>
+            <option value="">新建调研任务</option>
+            {workspaceTasks.map((item) => <option key={item.id} value={item.id}>{item.name} / {item.status}</option>)}
+          </select></label>
+          <Field label="任务名称" value={draft.name} onChange={(name) => setDraft({ ...draft, name })} />
+          <Field label="负责人" value={draft.owner} onChange={(owner) => setDraft({ ...draft, owner })} />
+          <label>状态<select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as ResearchTask["status"] })}>
+            <option>草稿</option><option>进行中</option><option>已完成</option><option>已归档</option>
+          </select></label>
+          <Field label="开始日期" type="date" value={draft.startAt} onChange={(startAt) => setDraft({ ...draft, startAt })} />
+          <Field label="截止日期" type="date" value={draft.endAt} onChange={(endAt) => setDraft({ ...draft, endAt })} />
+          <label>关联研究专题<select multiple value={draft.topicIds} onChange={(event) => setDraft({ ...draft, topicIds: Array.from(event.currentTarget.selectedOptions, (option) => option.value) })}>
+            {state.topics.filter((item) => item.workspaceId === state.activeWorkspaceId).map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select></label>
+        </div>
+        <label>任务目标<textarea value={draft.objective} onChange={(event) => setDraft({ ...draft, objective: event.target.value })} /></label>
+        <div className="panel-actions">
+          <button className="button secondary" type="button" onClick={createTask}><Plus size={16} /> 新建任务</button>
+          <button className="button" type="button" onClick={saveTask}><CheckCircle2 size={16} /> 保存任务</button>
+        </div>
+      </Panel>
+
+      <Panel title="选样策略">
+        <div className="form-grid">
+          <Field label="企业类型关键词" value={strategy.type} onChange={(type) => setStrategy({ ...strategy, type })} />
+          <Field label="产业链位置关键词" value={strategy.position} onChange={(position) => setStrategy({ ...strategy, position })} />
+          <Field label="企业规模关键词" value={strategy.scale} onChange={(scale) => setStrategy({ ...strategy, scale })} />
+          <label>动态情报类型<select value={strategy.intelligenceType} onChange={(event) => setStrategy({ ...strategy, intelligenceType: event.target.value })}>
+            <option value="">不限</option><option>招投标</option><option>采购</option><option>新闻</option><option>扩产</option><option>招聘</option><option>认证</option>
+          </select></label>
+        </div>
+        <button className="button" type="button" disabled={!task} onClick={generateCandidates}><Sparkles size={16} /> 生成候选样本</button>
+        {!task ? <p className="muted-text">请先保存调研任务，再设置策略生成候选企业。</p> : null}
+        <div className="research-context">
+          <strong>样本状态</strong>
+          <span>候选 {samples.filter((item) => item.status === "候选").length} 家；已选定 {samples.filter((item) => item.status === "已选定").length} 家；已计划 {samples.filter((item) => item.status === "已计划").length} 家；已完成 {samples.filter((item) => item.status === "已完成").length} 家。</span>
+        </div>
+      </Panel>
+
+      <Panel title="任务样本池">
+        <div className="sample-list">
+          {samples.map((sample) => {
+            const company = state.companies.find((item) => item.id === sample.companyId);
+            return <div className="sample-row" key={sample.id}>
+              <div><strong>{company?.name || "企业待补充"}</strong><span>{company?.companyType} / {company?.chainPosition} / {company?.scale}</span><small>{sample.selectionReason}</small></div>
+              <div className="sample-controls">
+                <label>优先级<select value={sample.priority} onChange={(event) => updateSample(sample.id, { priority: event.target.value as ResearchSample["priority"] })}><option>高</option><option>中</option><option>低</option></select></label>
+                <label>状态<select value={sample.status} onChange={(event) => updateSample(sample.id, { status: event.target.value as ResearchSample["status"] })}><option>候选</option><option>已选定</option><option>已计划</option><option>已完成</option><option>需复访</option><option>已排除</option></select></label>
+              </div>
+            </div>;
+          })}
+          {!samples.length ? <div className="empty-stage">尚未生成任务样本。可使用选样策略推荐，也可从右侧企业池手动补充。</div> : null}
+        </div>
+      </Panel>
+
+      <Panel title="企业池">
+        <div className="company-table compact">
+          {candidates.map((company) => <div className="company-row" key={company.id}>
+            <div><strong>{company.name}</strong><span>{company.companyType} / {company.chainPosition} / {company.scale}</span></div>
+            {sampledCompanyIds.has(company.id) ? <em>已纳入</em> : <button className="text-button" type="button" disabled={!task} onClick={() => addSample(company.id)}>纳入样本</button>}
+          </div>)}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
 function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedCompanyId }: { state: AppState; setState: (state: AppState) => void; selectedCompanyId: string; setSelectedCompanyId: (id: string) => void }) {
   const selectedCompany = state.companies.find((company) => company.id === selectedCompanyId) ?? state.companies[0];
+  const workspaceTasks = state.researchTasks.filter((item) => item.workspaceId === (selectedCompany?.workspaceId ?? state.activeWorkspaceId));
+  const [questionTaskId, setQuestionTaskId] = useState(workspaceTasks.find((item) => item.status === "进行中")?.id ?? workspaceTasks[0]?.id ?? "");
   const [editingTemplate, setEditingTemplate] = useState<QuestionTemplate>(emptyTemplate());
   const [draftQuestions, setDraftQuestions] = useState<string[]>(() => selectedCompany ? buildResearchQuestions(selectedCompany, state) : []);
   const [questionSetName, setQuestionSetName] = useState("");
@@ -1006,35 +1239,12 @@ function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedComp
     setEditingTemplate(emptyTemplate());
   }
 
-  function saveAsPlan() {
-    if (!selectedCompany || !draftQuestions.length) return;
-    setState({
-      ...state,
-      plans: [
-        ...state.plans,
-        {
-          id: uid(),
-          workspaceId: selectedCompany.workspaceId,
-          companyIds: [selectedCompany.id],
-          date: new Date().toISOString().slice(0, 10),
-          owner: "我",
-          objective: `围绕企业类型“${selectedCompany.companyType}”和产业链位置“${selectedCompany.chainPosition}”开展调研：\n${draftQuestions.map((item, index) => `${index + 1}. ${item}`).join("\n")}`,
-          status: "计划中",
-          questionSnapshot: draftQuestions,
-          topicIds: Array.from(new Set(companyIntelligence.flatMap((item) => item.topicIds))),
-          intelligenceIds: companyIntelligence.map((item) => item.id)
-        }
-      ]
-    });
-  }
-
   function saveQuestionSet() {
     if (!selectedCompany || !draftQuestions.length || !questionSetName.trim()) return;
-    const task = state.researchTasks.find((item) => item.workspaceId === selectedCompany.workspaceId && item.status === "进行中") ?? state.researchTasks.find((item) => item.workspaceId === selectedCompany.workspaceId);
     const questionSet: QuestionSet = {
       id: uid(),
       workspaceId: selectedCompany.workspaceId,
-      taskId: task?.id,
+      taskId: questionTaskId || undefined,
       companyId: selectedCompany.id,
       name: questionSetName.trim(),
       focus: questionSetFocus.trim(),
@@ -1070,6 +1280,10 @@ function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedComp
     <div className="grid two">
       <Panel title="按企业生成调研问题">
         <div className="form-grid">
+          <label>所属调研任务<select value={questionTaskId} onChange={(event) => setQuestionTaskId(event.target.value)}>
+            <option value="">不归属具体任务</option>
+            {workspaceTasks.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+          </select></label>
           <label>调研企业<select value={selectedCompany?.id ?? ""} onChange={(event) => {
             setSelectedCompanyId(event.target.value);
             const company = state.companies.find((item) => item.id === event.target.value);
@@ -1090,7 +1304,6 @@ function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedComp
           <Field label="问题组名称" value={questionSetName} onChange={setQuestionSetName} />
           <Field label="本次调研重点" value={questionSetFocus} onChange={setQuestionSetFocus} />
           <button className="button secondary" type="button" onClick={saveQuestionSet}><ClipboardList size={16} /> 保存问题组</button>
-          <button className="button" type="button" onClick={saveAsPlan}><CheckCircle2 size={16} /> 保存为调研计划</button>
         </div>
       </Panel>
 
@@ -1148,122 +1361,198 @@ function recommendedFocus(company: ResearchCompany) {
 }
 
 function Plans({ state, setState }: { state: AppState; setState: (state: AppState) => void }) {
-  const [draft, setDraft] = useState<Omit<ResearchPlan, "id">>({
-    workspaceId: state.activeWorkspaceId,
-    companyIds: [],
-    date: new Date().toISOString().slice(0, 10),
-    owner: "我",
-    objective: "了解企业数字化现状、关键痛点、近期建设计划和可匹配能力。",
-    status: "计划中"
-  });
-  const selectedCompanies = state.companies.filter((company) => draft.companyIds.includes(company.id));
-  const preparedQuestions = Array.from(new Set(selectedCompanies.flatMap((company) => buildResearchQuestions(company, state)))).slice(0, 18);
-  const linkedIntelligence = state.intelligence.filter((item) => item.companyIds.some((companyId) => draft.companyIds.includes(companyId)) && intelligenceIsRelevant(item));
-  const [recommendation, setRecommendation] = useState({ type: "", position: "", scale: "" });
+  type TargetDraft = {
+    sampleId: string;
+    companyId: string;
+    questionSetId: string;
+    scheduledAt: string;
+    durationMinutes: string;
+    method: string;
+    owner: string;
+  };
+  const workspaceTasks = state.researchTasks.filter((item) => item.workspaceId === state.activeWorkspaceId);
+  const [taskId, setTaskId] = useState(workspaceTasks.find((item) => item.status === "进行中")?.id ?? workspaceTasks[0]?.id ?? "");
+  const task = workspaceTasks.find((item) => item.id === taskId);
+  const [selectedSampleIds, setSelectedSampleIds] = useState<string[]>([]);
+  const [targetDrafts, setTargetDrafts] = useState<TargetDraft[]>([]);
+  const [planDate, setPlanDate] = useState(new Date().toISOString().slice(0, 10));
+  const [owner, setOwner] = useState("我");
+  const [objective, setObjective] = useState("了解企业数字化现状、关键痛点、近期建设计划和可匹配能力。");
+  const [validation, setValidation] = useState("");
+  const eligibleSamples = state.researchSamples.filter((item) => item.taskId === taskId && sampleCanBePlanned(item));
+  const selectedSamples = eligibleSamples.filter((item) => selectedSampleIds.includes(item.id));
+  const selectedCompanyIds = selectedSamples.map((item) => item.companyId);
+  const linkedIntelligence = state.intelligence.filter((item) => item.companyIds.some((companyId) => selectedCompanyIds.includes(companyId)) && intelligenceIsRelevant(item));
 
-  function recommendCompanies() {
-    const matches = state.companies.filter((company) => {
-      const typeMatches = !recommendation.type || company.companyType.includes(recommendation.type);
-      const positionMatches = !recommendation.position || company.chainPosition.includes(recommendation.position);
-      const scaleMatches = !recommendation.scale || company.scale.includes(recommendation.scale);
-      return typeMatches && positionMatches && scaleMatches && company.workspaceId === state.activeWorkspaceId;
-    });
-    const task = state.researchTasks.find((item) => item.workspaceId === state.activeWorkspaceId && item.status === "进行中") ?? state.researchTasks.find((item) => item.workspaceId === state.activeWorkspaceId);
-    const strategyId = uid();
-    const candidates = task ? matches.filter((company) => !state.researchSamples.some((sample) => sample.taskId === task.id && sample.companyId === company.id)).map((company) => ({
-      id: uid(),
-      taskId: task.id,
-      companyId: company.id,
-      sampleRole: "候选样本",
-      selectionReason: `匹配选样策略：${[recommendation.type && `类型=${recommendation.type}`, recommendation.position && `产业位置=${recommendation.position}`, recommendation.scale && `规模=${recommendation.scale}`].filter(Boolean).join("；") || "当前区域企业池"}`,
-      priority: "中" as const,
-      status: "候选" as const,
-      snapshotAt: new Date().toISOString().slice(0, 10)
-    })) : [];
-    setState({
-      ...state,
-      samplingStrategies: task ? [...state.samplingStrategies, { id: strategyId, taskId: task.id, companyTypeKeywords: splitTags(recommendation.type), chainPositionKeywords: splitTags(recommendation.position), scaleKeywords: splitTags(recommendation.scale), intelligenceTypes: [], createdAt: new Date().toISOString().slice(0, 10) }] : state.samplingStrategies,
-      researchSamples: [...state.researchSamples, ...candidates]
-    });
-    setDraft({ ...draft, companyIds: matches.map((company) => company.id) });
+  function changeTask(nextTaskId: string) {
+    setTaskId(nextTaskId);
+    setSelectedSampleIds([]);
+    setTargetDrafts([]);
+    setValidation("");
+  }
+
+  function questionSetFor(companyId: string, questionSetId?: string) {
+    return findFrozenQuestionSet(state.questionSets, companyId, taskId, questionSetId);
+  }
+
+  function toggleSample(sample: ResearchSample) {
+    const isSelected = selectedSampleIds.includes(sample.id);
+    if (isSelected) {
+      setSelectedSampleIds(selectedSampleIds.filter((id) => id !== sample.id));
+      setTargetDrafts(targetDrafts.filter((item) => item.sampleId !== sample.id));
+      return;
+    }
+    const questionSet = questionSetFor(sample.companyId);
+    setSelectedSampleIds([...selectedSampleIds, sample.id]);
+    setTargetDrafts([...targetDrafts, {
+      sampleId: sample.id,
+      companyId: sample.companyId,
+      questionSetId: questionSet?.id ?? "",
+      scheduledAt: planDate,
+      durationMinutes: "90",
+      method: "现场访谈",
+      owner
+    }]);
+  }
+
+  function updateTargetDraft(sampleId: string, patch: Partial<TargetDraft>) {
+    setTargetDrafts(targetDrafts.map((item) => item.sampleId === sampleId ? { ...item, ...patch } : item));
   }
 
   function createPlan() {
-    if (!draft.companyIds.length) return;
+    if (!task || !targetDrafts.length) {
+      setValidation("请选择至少一个任务样本。");
+      return;
+    }
+    if (targetDrafts.some((item) => !item.questionSetId)) {
+      setValidation("每个计划对象都需要选择一个已冻结的问题组。");
+      return;
+    }
     const planId = uid();
-    const task = state.researchTasks.find((item) => item.workspaceId === draft.workspaceId && item.status === "进行中") ?? state.researchTasks.find((item) => item.workspaceId === draft.workspaceId);
-    const newSamples = task ? draft.companyIds.filter((companyId) => !state.researchSamples.some((sample) => sample.taskId === task.id && sample.companyId === companyId)).map((companyId) => ({
-      id: uid(),
-      taskId: task.id,
-      companyId,
-      sampleRole: "待补充",
-      selectionReason: "由调研计划选择并纳入任务样本。",
-      priority: "中" as const,
-      status: "已计划" as const,
-      snapshotAt: new Date().toISOString().slice(0, 10)
-    })) : [];
-    const planTargets = draft.companyIds.map((companyId) => {
-      const questionSet = state.questionSets.filter((item) => item.companyId === companyId && item.status === "已冻结").sort((a, b) => b.generatedAt.localeCompare(a.generatedAt))[0];
-      const company = state.companies.find((item) => item.id === companyId);
+    const targets: PlanTarget[] = targetDrafts.map((draft) => {
+      const questionSet = questionSetFor(draft.companyId, draft.questionSetId);
       return {
         id: uid(),
         planId,
-        sampleId: state.researchSamples.find((sample) => sample.taskId === task?.id && sample.companyId === companyId)?.id ?? newSamples.find((sample) => sample.companyId === companyId)?.id,
-        companyId,
+        sampleId: draft.sampleId,
+        companyId: draft.companyId,
         questionSetId: questionSet?.id,
-        questionSnapshot: questionSet?.items.sort((a, b) => a.order - b.order).map((item) => item.content) ?? (company ? buildResearchQuestions(company, state) : []),
-        scheduledAt: draft.date,
-        method: "待确认",
+        questionSnapshot: questionSet?.items.slice().sort((a, b) => a.order - b.order).map((item) => item.content) ?? [],
+        scheduledAt: draft.scheduledAt,
+        durationMinutes: Number(draft.durationMinutes) || undefined,
+        method: draft.method,
         owner: draft.owner,
-        status: "待执行"
-      } satisfies PlanTarget;
+        status: draft.scheduledAt ? "待执行" : "待安排"
+      };
     });
     setState({
       ...state,
       plans: [...state.plans, {
-        ...draft,
         id: planId,
-        taskId: task?.id,
-        questionSnapshot: preparedQuestions,
-        topicIds: Array.from(new Set(linkedIntelligence.flatMap((item) => item.topicIds))),
+        workspaceId: state.activeWorkspaceId,
+        taskId: task.id,
+        companyIds: targets.map((item) => item.companyId),
+        date: planDate,
+        owner,
+        objective,
+        status: "计划中",
+        questionSnapshot: Array.from(new Set(targets.flatMap((item) => item.questionSnapshot))),
+        topicIds: task.topicIds,
         intelligenceIds: linkedIntelligence.map((item) => item.id)
       }],
-      planTargets: [...state.planTargets, ...planTargets],
-      researchSamples: [...state.researchSamples.map((sample) => draft.companyIds.includes(sample.companyId) && sample.taskId === task?.id ? { ...sample, status: "已计划" as const } : sample), ...newSamples]
+      planTargets: [...state.planTargets, ...targets],
+      researchSamples: state.researchSamples.map((item) => selectedSampleIds.includes(item.id) ? { ...item, status: "已计划" as const } : item)
+    });
+    setSelectedSampleIds([]);
+    setTargetDrafts([]);
+    setValidation("");
+  }
+
+  function updatePlanTarget(targetId: string, patch: Partial<PlanTarget>) {
+    setState({
+      ...state,
+      planTargets: state.planTargets.map((item) => item.id === targetId ? { ...item, ...patch } : item)
     });
   }
 
+  const plans = state.plans.filter((item) => item.workspaceId === state.activeWorkspaceId);
+
   return (
-    <div className="grid two">
-      <Panel title="制定调研计划">
-        <div className="form-grid">
-          <Field label="调研日期" type="date" value={draft.date} onChange={(date) => setDraft({ ...draft, date })} />
-          <Field label="负责人" value={draft.owner} onChange={(owner) => setDraft({ ...draft, owner })} />
-          <label>状态<select value={draft.status} onChange={(event) => setDraft({ ...draft, status: event.target.value as ResearchPlan["status"] })}><option>计划中</option><option>已完成</option></select></label>
-        </div>
-        <div className="plan-recommendation">
-          <strong>按样本特征推荐企业</strong>
+    <div className="grid">
+      <section className="grid two">
+        <Panel title="从任务样本制定计划">
           <div className="form-grid">
-            <Field label="企业类型关键词" value={recommendation.type} onChange={(type) => setRecommendation({ ...recommendation, type })} />
-            <Field label="产业位置关键词" value={recommendation.position} onChange={(position) => setRecommendation({ ...recommendation, position })} />
-            <Field label="规模关键词" value={recommendation.scale} onChange={(scale) => setRecommendation({ ...recommendation, scale })} />
+            <label>调研任务<select value={taskId} onChange={(event) => changeTask(event.target.value)}>
+              <option value="">请选择任务</option>
+              {workspaceTasks.map((item) => <option key={item.id} value={item.id}>{item.name} / {item.status}</option>)}
+            </select></label>
+            <Field label="计划负责人" value={owner} onChange={setOwner} />
+            <Field label="计划起始日期" type="date" value={planDate} onChange={setPlanDate} />
           </div>
-          <button className="button secondary" type="button" onClick={recommendCompanies}><Sparkles size={16} /> 推荐并选中企业</button>
-        </div>
-        <label>本次调研企业<select multiple value={draft.companyIds} onChange={(event) => setDraft({ ...draft, companyIds: Array.from(event.currentTarget.selectedOptions, (option) => option.value) })}>{state.companies.filter((company) => company.workspaceId === state.activeWorkspaceId).map((company) => <option key={company.id} value={company.id}>{company.name} / {company.companyType} / {company.chainPosition}</option>)}</select></label>
-        <label>调研目标<textarea value={draft.objective} onChange={(event) => setDraft({ ...draft, objective: event.target.value })} /></label>
-        <button className="button" type="button" onClick={createPlan}><CalendarDays size={16} /> 生成计划</button>
-      </Panel>
-      <Panel title="当前调研准备包">
-        <div className="question-list">
-          {preparedQuestions.map((question, index) => <div className="question" key={question}><strong>{index + 1}</strong><span>{question}</span></div>)}
-          {!preparedQuestions.length ? <div className="empty-stage">选择一组企业后，会按其类型、产业位置和已关联动态生成准备问题。</div> : null}
-        </div>
-        {linkedIntelligence.length ? <div className="research-context"><strong>本次计划将关联动态情报</strong>{linkedIntelligence.map((item) => <span key={item.id}>{item.type}：{item.title}</span>)}</div> : null}
-      </Panel>
-      <Panel title="计划列表">
-        <div className="card-list">
-          {state.plans.map((plan) => <PlanCard key={plan.id} plan={plan} companies={state.companies.filter((company) => plan.companyIds.includes(company.id))} />)}
+          <label>计划目标<textarea value={objective} onChange={(event) => setObjective(event.target.value)} /></label>
+          <div className="sample-list">
+            {eligibleSamples.map((sample) => {
+              const company = state.companies.find((item) => item.id === sample.companyId);
+              const selected = selectedSampleIds.includes(sample.id);
+              return <label className={`sample-select ${selected ? "selected" : ""}`} key={sample.id}>
+                <input type="checkbox" checked={selected} onChange={() => toggleSample(sample)} />
+                <span><strong>{company?.name || "企业待补充"}</strong><small>{company?.companyType} / {company?.chainPosition} / {sample.priority}优先级</small></span>
+              </label>;
+            })}
+            {task && !eligibleSamples.length ? <div className="empty-stage">此任务还没有可安排的样本，请先在“任务与对象选样”中确认企业。</div> : null}
+          </div>
+        </Panel>
+
+        <Panel title="逐企业配置计划对象">
+          <div className="target-draft-list">
+            {targetDrafts.map((item) => {
+              const company = state.companies.find((companyItem) => companyItem.id === item.companyId);
+              const availableSets = state.questionSets
+                .filter((set) => set.companyId === item.companyId && set.status === "已冻结" && (!taskId || !set.taskId || set.taskId === taskId))
+                .sort((a, b) => (b.frozenAt || b.generatedAt).localeCompare(a.frozenAt || a.generatedAt));
+              return <div className="target-draft" key={item.sampleId}>
+                <strong>{company?.name || "企业待补充"}</strong>
+                <div className="form-grid">
+                  <label>冻结问题组<select value={item.questionSetId} onChange={(event) => updateTargetDraft(item.sampleId, { questionSetId: event.target.value })}>
+                    <option value="">请选择已冻结问题组</option>
+                    {availableSets.map((set) => <option key={set.id} value={set.id}>{set.name} / v{set.version} / {set.items.length}题</option>)}
+                  </select></label>
+                  <Field label="预约日期" type="date" value={item.scheduledAt} onChange={(scheduledAt) => updateTargetDraft(item.sampleId, { scheduledAt })} />
+                  <Field label="预计时长(分钟)" type="number" value={item.durationMinutes} onChange={(durationMinutes) => updateTargetDraft(item.sampleId, { durationMinutes })} />
+                  <Field label="调研方式" value={item.method} onChange={(method) => updateTargetDraft(item.sampleId, { method })} />
+                  <Field label="执行人" value={item.owner} onChange={(targetOwner) => updateTargetDraft(item.sampleId, { owner: targetOwner })} />
+                </div>
+                {!availableSets.length ? <small className="field-warning">请先到“问题准备”为该企业保存并冻结一组问题。</small> : null}
+              </div>;
+            })}
+            {!targetDrafts.length ? <div className="empty-stage">从左侧选择任务样本后，可分别绑定问题组、时间、方式和执行人。</div> : null}
+          </div>
+          {validation ? <p className="field-warning">{validation}</p> : null}
+          <button className="button" type="button" onClick={createPlan}><CalendarDays size={16} /> 生成调研计划</button>
+        </Panel>
+      </section>
+
+      <Panel title="已生成计划与执行对象">
+        <div className="plan-target-board">
+          {plans.map((plan) => {
+            const targets = state.planTargets.filter((item) => item.planId === plan.id);
+            return <div className="plan-target-group" key={plan.id}>
+              <div className="plan-target-heading"><div><strong>{plan.objective}</strong><span>{plan.date} / {plan.owner} / {plan.status} / {targets.length} 个计划对象</span></div></div>
+              {targets.map((target) => {
+                const company = state.companies.find((item) => item.id === target.companyId);
+                const questionSet = state.questionSets.find((item) => item.id === target.questionSetId);
+                return <div className="plan-target-row" key={target.id}>
+                  <div><strong>{company?.name || "企业待补充"}</strong><small>{questionSet?.name || `问题 ${target.questionSnapshot.length} 条`}</small></div>
+                  <Field label="日期" type="date" value={target.scheduledAt} onChange={(scheduledAt) => updatePlanTarget(target.id, { scheduledAt })} />
+                  <Field label="方式" value={target.method} onChange={(method) => updatePlanTarget(target.id, { method })} />
+                  <label>状态<select value={target.status} onChange={(event) => updatePlanTarget(target.id, { status: event.target.value as PlanTarget["status"] })}>
+                    <option>待安排</option><option>已预约</option><option>待执行</option><option>执行中</option><option disabled>已完成</option><option>已取消</option>
+                  </select></label>
+                </div>;
+              })}
+            </div>;
+          })}
+          {!plans.length ? <div className="empty-stage">尚未生成调研计划。</div> : null}
         </div>
       </Panel>
     </div>
@@ -1311,11 +1600,19 @@ function Records({ state, setState, selectedCompanyId }: { state: AppState; setS
       needs,
       conclusion
     };
+    const nextPlanTargets = state.planTargets.map((item) => item.id === planTarget.id ? { ...item, status: "已完成" as const } : item);
     setState({
       ...state,
       records: [...state.records, record],
       companies: state.companies.map((company) => company.id === companyId ? { ...company, status: "已完成" } : company),
-      planTargets: state.planTargets.map((item) => item.id === planTarget.id ? { ...item, status: "已完成" } : item)
+      planTargets: nextPlanTargets,
+      researchSamples: state.researchSamples.map((item) => item.id === planTarget.sampleId ? { ...item, status: "已完成" } : item),
+      plans: state.plans.map((plan) => {
+        const targets = nextPlanTargets.filter((item) => item.planId === plan.id);
+        return plan.id === planTarget.planId && targets.length && targets.every((item) => item.status === "已完成")
+          ? { ...plan, status: "已完成" as const }
+          : plan;
+      })
     });
     setSummary("");
     setTranscript("");
@@ -1349,7 +1646,7 @@ function Records({ state, setState, selectedCompanyId }: { state: AppState; setS
             const target = state.planTargets.find((item) => item.id === event.target.value);
             setPlanTargetId(event.target.value);
             if (target) setCompanyId(target.companyId);
-          }}><option value="">请选择计划对象</option>{state.planTargets.filter((target) => target.status !== "已完成" && !state.records.some((record) => record.planTargetId === target.id)).map((target) => <option key={target.id} value={target.id}>{target.scheduledAt} / {state.companies.find((company) => company.id === target.companyId)?.name ?? "企业待补充"}</option>)}</select></label>
+          }}><option value="">请选择计划对象</option>{state.planTargets.filter((target) => canCreateRecord(target, state.records)).map((target) => <option key={target.id} value={target.id}>{target.scheduledAt} / {state.companies.find((company) => company.id === target.companyId)?.name ?? "企业待补充"}</option>)}</select></label>
           <DetailItem label="调研企业" value={state.companies.find((company) => company.id === companyId)?.name ?? "请选择计划对象"} />
           <Field label="访谈人" value="我" onChange={() => undefined} />
         </div>
@@ -1373,6 +1670,95 @@ function Records({ state, setState, selectedCompanyId }: { state: AppState; setS
       <Panel title="历史调研记录">
         <div className="card-list">
           {state.records.map((record) => <RecordCard key={record.id} record={record} company={state.companies.find((company) => company.id === record.companyId)} />)}
+        </div>
+      </Panel>
+    </div>
+  );
+}
+
+function ResearchArchive({ state }: { state: AppState }) {
+  const [keyword, setKeyword] = useState("");
+  const [taskId, setTaskId] = useState("");
+  const [companyType, setCompanyType] = useState("");
+  const [chainPosition, setChainPosition] = useState("");
+  const [targetStatus, setTargetStatus] = useState("");
+  const [startAt, setStartAt] = useState("");
+  const [endAt, setEndAt] = useState("");
+  const tasks = state.researchTasks.filter((item) => item.workspaceId === state.activeWorkspaceId);
+  const companies = state.companies.filter((item) => item.workspaceId === state.activeWorkspaceId);
+  const companyTypes = Array.from(new Set(companies.map((item) => item.companyType).filter(Boolean))).sort();
+  const chainPositions = Array.from(new Set(companies.map((item) => item.chainPosition).filter(Boolean))).sort();
+  const rows = useMemo(() => state.planTargets
+    .map((target) => {
+      const company = state.companies.find((item) => item.id === target.companyId);
+      const plan = state.plans.find((item) => item.id === target.planId);
+      const record = state.records.find((item) => item.planTargetId === target.id);
+      const sample = state.researchSamples.find((item) => item.id === target.sampleId);
+      const questionSet = state.questionSets.find((item) => item.id === target.questionSetId);
+      return { target, company, plan, record, sample, questionSet };
+    })
+    .filter((row) => {
+      if (!row.company) return false;
+      const haystack = [
+        row.company.name,
+        row.company.companyType,
+        row.company.chainPosition,
+        row.company.scale,
+        row.plan?.objective,
+        row.questionSet?.name,
+        row.record?.summary,
+        row.record?.conclusion
+      ].join(" ").toLowerCase();
+      const date = row.record?.date || row.target.scheduledAt;
+      return (!keyword || haystack.includes(keyword.toLowerCase()))
+        && (!taskId || row.plan?.taskId === taskId)
+        && (!companyType || row.company.companyType === companyType)
+        && (!chainPosition || row.company.chainPosition === chainPosition)
+        && (!targetStatus || row.target.status === targetStatus)
+        && (!startAt || date >= startAt)
+        && (!endAt || date <= endAt);
+    }), [state, keyword, taskId, companyType, chainPosition, targetStatus, startAt, endAt]);
+  const completedRows = rows.filter((row) => row.record);
+  const needCount = completedRows.reduce((total, row) => total + (row.record?.needs.length ?? 0), 0);
+
+  return (
+    <div className="grid">
+      <Panel title="调研档案查询">
+        <div className="form-grid archive-filters">
+          <Field label="企业或内容关键词" value={keyword} onChange={setKeyword} />
+          <label>调研任务<select value={taskId} onChange={(event) => setTaskId(event.target.value)}><option value="">全部任务</option>{tasks.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>
+          <label>企业类型<select value={companyType} onChange={(event) => setCompanyType(event.target.value)}><option value="">全部类型</option>{companyTypes.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+          <label>产业链位置<select value={chainPosition} onChange={(event) => setChainPosition(event.target.value)}><option value="">全部位置</option>{chainPositions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+          <label>执行状态<select value={targetStatus} onChange={(event) => setTargetStatus(event.target.value)}><option value="">全部状态</option><option>待安排</option><option>已预约</option><option>待执行</option><option>执行中</option><option>已完成</option><option>已取消</option></select></label>
+          <Field label="开始日期" type="date" value={startAt} onChange={setStartAt} />
+          <Field label="结束日期" type="date" value={endAt} onChange={setEndAt} />
+        </div>
+      </Panel>
+
+      <section className="metric-grid">
+        <Metric icon={<CalendarDays />} label="计划对象" value={rows.length} />
+        <Metric icon={<Mic2 />} label="已完成访谈" value={completedRows.length} />
+        <Metric icon={<ClipboardList />} label="需求候选" value={needCount} />
+        <Metric icon={<FileAudio />} label="含录音记录" value={completedRows.filter((row) => row.record?.audioUrl).length} />
+      </section>
+
+      <Panel title="计划、记录与证据">
+        <div className="archive-list">
+          {rows.map((row) => <article className="archive-row" key={row.target.id}>
+            <div className="archive-row-heading">
+              <div><strong>{row.company?.name}</strong><span>{row.company?.companyType} / {row.company?.chainPosition} / {row.company?.scale}</span></div>
+              <em>{row.target.status}</em>
+            </div>
+            <div className="archive-meta">
+              <span>任务：{tasks.find((item) => item.id === row.plan?.taskId)?.name || "未归属任务"}</span>
+              <span>计划日期：{row.target.scheduledAt || "-"}</span>
+              <span>问题组：{row.questionSet?.name || `快照 ${row.target.questionSnapshot.length} 题`}</span>
+              <span>样本：{row.sample?.sampleRole || "-"}</span>
+            </div>
+            {row.record ? <p>{row.record.conclusion || row.record.summary || "已保存调研记录，待补充结论。"}</p> : <p className="muted-text">尚未形成调研记录。</p>}
+            {row.record?.needs.length ? <div className="policy-tags">{row.record.needs.map((need) => <span key={need.id}>{need.category} / {need.priority} / {need.status}</span>)}</div> : null}
+          </article>)}
+          {!rows.length ? <div className="empty-stage">当前条件下没有计划对象或调研记录。</div> : null}
         </div>
       </Panel>
     </div>
@@ -1499,7 +1885,10 @@ function useServerState() {
         const payload = await response.json() as { state: AppState | null };
         const stored = payload.state ?? parseStoredState(localStorage.getItem(STORE_KEY));
         const next = mergeYanliangCompanies(applyStateVersion(stored ?? initialState) as AppState);
-        if (!payload.state) {
+        const needsMigrationSave = !payload.state
+          || payload.state.dataVersion !== STATE_VERSION
+          || ["researchTasks", "samplingStrategies", "researchSamples", "questionSets", "planTargets"].some((key) => !Array.isArray((payload.state as unknown as Record<string, unknown>)[key]));
+        if (needsMigrationSave) {
           const saveResponse = await fetch("/api/state", {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
@@ -1533,7 +1922,7 @@ function useServerState() {
   return [state, setState, syncStatus] as const;
 }
 
-function mergeYanliangCompanies(state: AppState): AppState {
+export function mergeYanliangCompanies(state: AppState): AppState {
   const workspaces = state.workspaces?.length ? state.workspaces : defaultWorkspaces;
   const activeWorkspaceId = workspaces.some((workspace) => workspace.id === state.activeWorkspaceId)
     ? state.activeWorkspaceId
@@ -1591,16 +1980,7 @@ function mergeYanliangCompanies(state: AppState): AppState {
       };
     })
     .filter((plan) => plan.companyIds.length);
-  const planTargets = state.planTargets?.length ? state.planTargets : plans.flatMap((plan) => plan.companyIds.map((companyId) => ({
-    id: `legacy-target-${plan.id}-${companyId}`,
-    planId: plan.id,
-    companyId,
-    questionSnapshot: plan.questionSnapshot ?? [],
-    scheduledAt: plan.date,
-    method: "待补充",
-    owner: plan.owner,
-    status: plan.status === "已完成" ? "已完成" : "待执行"
-  } satisfies PlanTarget)));
+  const planTargets = addLegacyPlanTargets(plans, state.planTargets ?? []);
   const records = (state.records ?? [])
     .filter((record) => workspaceByCompanyId.has(record.companyId))
     .map((record) => ({
@@ -2048,6 +2428,19 @@ function template(category: string, appliesToTypes: string[], appliesToPositions
 
 function emptyTemplate(): QuestionTemplate {
   return { id: "", category: "自定义问题", appliesToTypes: [], appliesToPositions: [], question: "" };
+}
+
+function emptyTask(workspaceId: string): Omit<ResearchTask, "id"> {
+  return {
+    workspaceId,
+    name: "",
+    objective: "",
+    topicIds: [],
+    owner: "我",
+    startAt: new Date().toISOString().slice(0, 10),
+    endAt: "",
+    status: "草稿"
+  };
 }
 
 function splitTags(value: string) {
