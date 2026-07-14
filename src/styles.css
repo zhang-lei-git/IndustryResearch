@@ -568,6 +568,17 @@ label {
   flex-wrap: wrap;
 }
 
+.form-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
 .toolbar {
   margin-bottom: 14px;
 }

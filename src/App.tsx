@@ -1216,7 +1216,7 @@ function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; 
   return (
     mode === "project" ? (
       <div className="grid">
-        <Panel title="调研项目" action={task ? <button className="button danger" type="button" onClick={deleteTask}>删除项目</button> : undefined}>
+        <Panel title="调研项目">
         <div className="form-grid">
           <label>当前调研项目<select value={taskId} onChange={(event) => selectTask(event.target.value)}>
             <option value="">新建调研项目</option>
@@ -1234,9 +1234,10 @@ function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; 
           </select></label>
         </div>
         <label>项目目标<textarea value={draft.objective} onChange={(event) => setDraft({ ...draft, objective: event.target.value })} /></label>
-        <div className="panel-actions">
+        <div className="form-actions">
           <button className="button secondary" type="button" onClick={createTask}><Plus size={16} /> 新建项目</button>
           <button className="button" type="button" onClick={saveTask}><CheckCircle2 size={16} /> 保存项目</button>
+          {task ? <button className="button danger" type="button" onClick={deleteTask}>删除项目</button> : null}
         </div>
         </Panel>
         <Panel title="项目概览">
