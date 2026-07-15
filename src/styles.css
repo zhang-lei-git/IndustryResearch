@@ -2137,7 +2137,6 @@ label {
 
   .metric-grid,
   .grid.two,
-  .outline-layout,
   .form-grid,
   .need-board,
   .archive-filters,
@@ -2189,6 +2188,12 @@ label {
 
   .company-row em {
     justify-self: start;
+  }
+}
+
+@media (max-width: 680px) {
+  .outline-layout {
+    grid-template-columns: 1fr;
   }
 }
 
