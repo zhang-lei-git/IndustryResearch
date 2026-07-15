@@ -1408,7 +1408,6 @@ label {
 
 .outline-action-buttons {
   justify-content: flex-end;
-  border-top: 1px solid var(--line);
   padding-top: 14px;
 }
 
