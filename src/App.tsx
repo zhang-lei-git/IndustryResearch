@@ -52,7 +52,6 @@ import type {
   ResearchSample,
   ResearchTask,
   ResearchTopic,
-  SamplingStrategy,
   Workspace
 } from "./domain/types";
 import { intelligenceBelongsToCompany, intelligenceIsRelevant } from "./domain/intelligence";
@@ -1039,34 +1038,32 @@ function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; 
     endAt: task.endAt,
     status: task.status
   } : emptyTask(state.activeWorkspaceId));
-  const [strategy, setStrategy] = useState({
-    type: "",
-    position: "",
-    scale: "",
-    intelligenceType: ""
-  });
   const [topicToLink, setTopicToLink] = useState("");
-  const [manualCompanyId, setManualCompanyId] = useState("");
-  const [manualKeyword, setManualKeyword] = useState("");
-  const [manualType, setManualType] = useState("");
-  const [manualPosition, setManualPosition] = useState("");
-  const [manualScale, setManualScale] = useState("");
-  const [recommendationMessage, setRecommendationMessage] = useState("");
+  const [companyKeyword, setCompanyKeyword] = useState("");
+  const [companyType, setCompanyType] = useState("");
+  const [chainPosition, setChainPosition] = useState("");
+  const [companyScale, setCompanyScale] = useState("");
+  const [intelligenceType, setIntelligenceType] = useState("");
   const samples = state.researchSamples.filter((item) => item.taskId === taskId);
-  const recommendations = samples.filter((item) => item.status === "候选");
   const researchObjects = samples.filter((item) => item.status !== "候选" && item.status !== "已排除");
-  const sampledCompanyIds = new Set(samples.map((item) => item.companyId));
+  const researchObjectCompanyIds = new Set(researchObjects.map((item) => item.companyId));
   const candidates = state.companies.filter((company) => company.workspaceId === state.activeWorkspaceId);
   const companyTypes = Array.from(new Set(candidates.map((company) => company.companyType).filter(Boolean))).sort();
   const chainPositions = Array.from(new Set([...candidates.map((company) => company.chainPosition).filter(Boolean), "检验检测/试验验证"])).sort();
   const scales = Array.from(new Set(candidates.map((company) => company.scale).filter(Boolean))).sort();
-  const manualCandidates = candidates.filter((company) => {
-    const keywordMatches = !manualKeyword || [company.name, company.industry, company.companyType, company.chainPosition, company.scale].join(" ").toLowerCase().includes(manualKeyword.toLowerCase());
+  const filteredCompanies = candidates.filter((company) => {
+    const keywordMatches = !companyKeyword || [company.name, company.industry, company.companyType, company.chainPosition, company.scale].join(" ").toLowerCase().includes(companyKeyword.toLowerCase());
+    const positionMatches = !chainPosition || (chainPosition === "检验检测/试验验证"
+      ? /检验|检测|试验|强度|适航/.test(`${company.chainPosition} ${company.industry} ${company.notes}`)
+      : company.chainPosition.includes(chainPosition));
+    const intelligenceMatches = !intelligenceType || state.intelligence.some((item) =>
+      item.companyIds.includes(company.id) && item.type === intelligenceType && intelligenceIsRelevant(item)
+    );
     return keywordMatches
-      && (!manualType || company.companyType === manualType)
-      && (!manualPosition || company.chainPosition === manualPosition)
-      && (!manualScale || company.scale === manualScale)
-      && !sampledCompanyIds.has(company.id);
+      && (!companyType || company.companyType === companyType)
+      && positionMatches
+      && (!companyScale || company.scale === companyScale)
+      && intelligenceMatches;
   });
 
   function selectTask(nextTaskId: string) {
@@ -1141,58 +1138,8 @@ function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; 
     setDraft({ ...draft, topicIds: draft.topicIds.filter((item) => item !== topicId) });
   }
 
-  function generateCandidates() {
-    if (!task) return;
-    const matches = candidates.filter((company) => {
-      const typeMatches = !strategy.type || company.companyType.includes(strategy.type);
-      const positionMatches = !strategy.position
-        || (strategy.position === "检验检测/试验验证"
-          ? /检验|检测|试验|强度|适航/.test(`${company.chainPosition} ${company.industry} ${company.notes}`)
-          : company.chainPosition.includes(strategy.position));
-      const scaleMatches = !strategy.scale || company.scale.includes(strategy.scale);
-      const intelligenceMatches = !strategy.intelligenceType || state.intelligence.some((item) =>
-        item.companyIds.includes(company.id) && item.type === strategy.intelligenceType && intelligenceIsRelevant(item)
-      );
-      return typeMatches && positionMatches && scaleMatches && intelligenceMatches;
-    });
-    const strategyRecord: SamplingStrategy = {
-      id: uid(),
-      taskId: task.id,
-      companyTypeKeywords: splitTags(strategy.type),
-      chainPositionKeywords: splitTags(strategy.position),
-      scaleKeywords: splitTags(strategy.scale),
-      intelligenceTypes: strategy.intelligenceType ? [strategy.intelligenceType] : [],
-      createdAt: new Date().toISOString().slice(0, 10)
-    };
-    const newSamples: ResearchSample[] = matches
-      .filter((company) => !sampledCompanyIds.has(company.id))
-      .map((company) => ({
-        id: uid(),
-        taskId: task.id,
-        companyId: company.id,
-        sampleRole: "推荐对象",
-        selectionReason: `匹配选样策略：${[
-          strategy.type && `企业类型=${strategy.type}`,
-          strategy.position && `产业位置=${strategy.position}`,
-          strategy.scale && `企业规模=${strategy.scale}`,
-          strategy.intelligenceType && `动态情报=${strategy.intelligenceType}`
-        ].filter(Boolean).join("；") || "区域企业池"}`,
-        priority: "中",
-        status: "候选",
-        snapshotAt: new Date().toISOString().slice(0, 10)
-      }));
-    setRecommendationMessage(matches.length
-      ? `已匹配 ${matches.length} 家企业，其中新增 ${newSamples.length} 家推荐企业。请从推荐结果中选择需要加入本轮调研的企业。`
-      : "当前条件下没有匹配企业，请调整企业角色、产业链环节或规模条件。");
-    setState({
-      ...state,
-      samplingStrategies: [...state.samplingStrategies, strategyRecord],
-      researchSamples: [...state.researchSamples, ...newSamples]
-    });
-  }
-
   function addSample(companyId: string) {
-    if (!task || sampledCompanyIds.has(companyId)) return;
+    if (!task || researchObjectCompanyIds.has(companyId)) return;
     setState({
       ...state,
       researchSamples: [...state.researchSamples, {
@@ -1224,13 +1171,6 @@ function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; 
     const company = state.companies.find((item) => item.id === sample.companyId);
     if (!window.confirm(`从本项目移除“${company?.name || "该企业"}”？`)) return;
     setState({ ...state, researchSamples: state.researchSamples.filter((item) => item.id !== sample.id) });
-  }
-
-  function addRecommendationToObjects(sampleId: string) {
-    setState({
-      ...state,
-      researchSamples: state.researchSamples.map((item) => item.id === sampleId ? { ...item, status: "已选定" as const, sampleRole: "调研对象" } : item)
-    });
   }
 
   return (
@@ -1291,37 +1231,31 @@ function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; 
         </div>
         {!task ? <div className="empty-stage">请先在“调研项目”中创建或选择一个项目。</div> : null}
       </Panel>
-      <Panel title="推荐条件">
+      <Panel title="从企业库筛选并加入">
         <div className="form-grid">
-          <label>企业角色<select value={strategy.type} onChange={(event) => setStrategy({ ...strategy, type: event.target.value })}><option value="">不限</option>{companyTypes.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-          <label>产业链环节<select value={strategy.position} onChange={(event) => setStrategy({ ...strategy, position: event.target.value })}><option value="">不限</option>{chainPositions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-          <label>企业规模<select value={strategy.scale} onChange={(event) => setStrategy({ ...strategy, scale: event.target.value })}><option value="">不限</option>{scales.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-          <label>动态情报类型<select value={strategy.intelligenceType} onChange={(event) => setStrategy({ ...strategy, intelligenceType: event.target.value })}>
+          <Field label="企业名称、行业或关键词" value={companyKeyword} onChange={setCompanyKeyword} />
+          <label>企业类型<select value={companyType} onChange={(event) => setCompanyType(event.target.value)}><option value="">不限</option>{companyTypes.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+          <label>产业链位置<select value={chainPosition} onChange={(event) => setChainPosition(event.target.value)}><option value="">不限</option>{chainPositions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+          <label>企业规模<select value={companyScale} onChange={(event) => setCompanyScale(event.target.value)}><option value="">不限</option>{scales.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
+          <label>动态情报类型<select value={intelligenceType} onChange={(event) => setIntelligenceType(event.target.value)}>
             <option value="">不限</option><option>招投标</option><option>采购</option><option>新闻</option><option>扩产</option><option>招聘</option><option>认证</option>
           </select></label>
         </div>
-        <button className="button" type="button" disabled={!task} onClick={generateCandidates}><Sparkles size={16} /> 推荐调研对象</button>
-        {!task ? <p className="muted-text">请选择调研项目后再设置条件。</p> : <p className="muted-text">例如选择“检验检测/试验验证”，系统会匹配企业名称、行业和产业链信息中包含检验、检测、试验、强度或适航的企业。</p>}
-        {recommendationMessage ? <p className="field-warning">{recommendationMessage}</p> : null}
-        <div className="research-context">
-          <strong>本轮调研进度</strong>
-          <span>推荐企业 {recommendations.length} 家；调研对象 {researchObjects.length} 家；已安排 {samples.filter((item) => item.status === "已计划").length} 家；已完成 {samples.filter((item) => item.status === "已完成").length} 家。</span>
-        </div>
+        <p className="muted-text">筛选只改变企业库结果，不会自动加入项目。选择“检验检测/试验验证”时，系统会匹配企业信息中含检验、检测、试验、强度或适航的企业。</p>
       </Panel>
 
-      <Panel title="推荐结果">
+      <Panel title={`企业库筛选结果（${filteredCompanies.length}）`}>
         <div className="sample-list">
-          {recommendations.map((sample) => {
-            const company = state.companies.find((item) => item.id === sample.companyId);
-            return <div className="sample-row" key={sample.id}>
-              <div><strong>{company?.name || "企业待补充"}</strong><span>{company?.companyType} / {company?.chainPosition} / {company?.scale}</span><small>{sample.selectionReason}</small></div>
+          {filteredCompanies.map((company) => {
+            const alreadyAdded = researchObjectCompanyIds.has(company.id);
+            return <div className="sample-row" key={company.id}>
+              <div><strong>{company.name}</strong><span>{company.companyType} / {company.chainPosition} / {company.scale}</span><small>{company.industry || "制造业企业"}</small></div>
               <div className="sample-controls">
-                <button className="button secondary" type="button" onClick={() => addRecommendationToObjects(sample.id)}><Plus size={16} /> 加入调研对象</button>
-                <button className="icon-button danger-outline" type="button" title="移除推荐企业" onClick={() => deleteSample(sample)}><X size={16} /></button>
+                <button className="button secondary" type="button" disabled={!task || alreadyAdded} onClick={() => addSample(company.id)}><Plus size={16} /> {alreadyAdded ? "已加入" : "加入调研对象"}</button>
               </div>
             </div>;
           })}
-          {!recommendations.length ? <div className="empty-stage">暂无待处理的推荐企业。设置条件后点击“推荐调研对象”。</div> : null}
+          {!filteredCompanies.length ? <div className="empty-stage">当前条件没有匹配企业，请调整筛选条件。</div> : null}
         </div>
       </Panel>
 
@@ -1338,25 +1272,8 @@ function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; 
               </div>
             </div>;
           })}
-          {!researchObjects.length ? <div className="empty-stage">尚未加入调研对象。可从上方推荐结果选择，或从企业库手动补充。</div> : null}
+          {!researchObjects.length ? <div className="empty-stage">尚未加入调研对象。请从上方企业库筛选结果中人工选择企业加入。</div> : null}
         </div>
-      </Panel>
-
-      <Panel title="从企业库补充">
-        <div className="form-grid compact-filters">
-          <Field label="名称或行业" value={manualKeyword} onChange={setManualKeyword} />
-          <label>企业角色<select value={manualType} onChange={(event) => setManualType(event.target.value)}><option value="">全部</option>{companyTypes.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-          <label>产业链环节<select value={manualPosition} onChange={(event) => setManualPosition(event.target.value)}><option value="">全部</option>{chainPositions.filter((item) => item !== "检验检测/试验验证").map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-          <label>企业规模<select value={manualScale} onChange={(event) => setManualScale(event.target.value)}><option value="">全部</option>{scales.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
-        </div>
-        <label>选择企业<select value={manualCompanyId} onChange={(event) => setManualCompanyId(event.target.value)}>
-          <option value="">请选择企业</option>
-          {manualCandidates.map((company) => <option key={company.id} value={company.id}>{company.name} / {company.companyType} / {company.chainPosition}</option>)}
-        </select></label>
-        <button className="button secondary" type="button" disabled={!task || !manualCompanyId} onClick={() => {
-          addSample(manualCompanyId);
-          setManualCompanyId("");
-        }}><Plus size={16} /> 加入本轮调研对象</button>
       </Panel>
       </div>
     )
@@ -1364,34 +1281,86 @@ function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; 
 }
 
 function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedCompanyId }: { state: AppState; setState: (state: AppState) => void; selectedCompanyId: string; setSelectedCompanyId: (id: string) => void }) {
-  const selectedCompany = state.companies.find((company) => company.id === selectedCompanyId) ?? state.companies[0];
-  const workspaceTasks = state.researchTasks.filter((item) => item.workspaceId === (selectedCompany?.workspaceId ?? state.activeWorkspaceId));
+  const workspaceTasks = state.researchTasks.filter((item) => item.workspaceId === state.activeWorkspaceId);
   const [questionTaskId, setQuestionTaskId] = useState(workspaceTasks.find((item) => item.status === "进行中")?.id ?? workspaceTasks[0]?.id ?? "");
-  const [draftQuestions, setDraftQuestions] = useState<string[]>(() => selectedCompany ? buildResearchQuestions(selectedCompany, state) : []);
+  const projectObjects = state.researchSamples.filter((sample) => sample.taskId === questionTaskId && sample.status !== "候选" && sample.status !== "已排除");
+  const selectedObjectId = projectObjects.some((sample) => sample.companyId === selectedCompanyId) ? selectedCompanyId : projectObjects[0]?.companyId ?? "";
+  const selectedCompany = state.companies.find((company) => company.id === selectedObjectId);
+  const [draftQuestions, setDraftQuestions] = useState<string[]>([]);
   const [questionSetName, setQuestionSetName] = useState("");
   const [questionSetFocus, setQuestionSetFocus] = useState("首访画像与数字化需求");
-  const [questionScope, setQuestionScope] = useState<"general" | "company">("general");
-  const generated = selectedCompany ? buildResearchQuestions(selectedCompany, state) : [];
+  const [editingQuestionSetId, setEditingQuestionSetId] = useState("");
+  const [libraryKeyword, setLibraryKeyword] = useState("");
+  const [newQuestion, setNewQuestion] = useState("");
+  const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
   const companyIntelligence = selectedCompany ? state.intelligence.filter((item) => intelligenceBelongsToCompany(item, selectedCompany.id) && intelligenceIsRelevant(item)) : [];
   const savedQuestionSets = state.questionSets
-    .filter((item) => !questionTaskId || item.taskId === questionTaskId)
+    .filter((item) => item.taskId === questionTaskId && item.companyId === selectedObjectId)
     .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt));
+  const selectableTemplates = selectedCompany ? state.questionTemplates
+    .filter((template) => templateMatchesCompany(template, selectedCompany))
+    .filter((template) => [template.category, template.question, ...template.appliesToTypes, ...template.appliesToPositions].join(" ").toLowerCase().includes(libraryKeyword.toLowerCase()))
+    .slice(0, 20) : [];
 
-  function refreshQuestions() {
+  function changeTask(nextTaskId: string) {
+    const nextObjects = state.researchSamples.filter((sample) => sample.taskId === nextTaskId && sample.status !== "候选" && sample.status !== "已排除");
+    setQuestionTaskId(nextTaskId);
+    setSelectedCompanyId(nextObjects[0]?.companyId ?? "");
+    setDraftQuestions([]);
+    setSuggestedQuestions([]);
+    setEditingQuestionSetId("");
+    setQuestionSetName("");
+  }
+
+  function changeObject(companyId: string) {
+    setSelectedCompanyId(companyId);
+    setDraftQuestions([]);
+    setSuggestedQuestions([]);
+    setEditingQuestionSetId("");
+    setQuestionSetName("");
+  }
+
+  function recommendQuestions() {
     if (!selectedCompany) return;
-    setDraftQuestions(generated);
+    setSuggestedQuestions(buildResearchQuestions(selectedCompany, state).filter((question) => !draftQuestions.includes(question)));
+  }
+
+  function addQuestion(question: string) {
+    const normalized = question.trim();
+    if (!normalized || draftQuestions.includes(normalized)) return;
+    setDraftQuestions([...draftQuestions, normalized]);
+    setSuggestedQuestions(suggestedQuestions.filter((item) => item !== normalized));
+  }
+
+  function removeQuestion(index: number) {
+    setDraftQuestions(draftQuestions.filter((_, itemIndex) => itemIndex !== index));
+  }
+
+  function syncQuestionToLibrary(question: string) {
+    const normalized = question.trim();
+    if (!normalized || state.questionTemplates.some((template) => template.question === normalized)) return;
+    setState({
+      ...state,
+      questionTemplates: [...state.questionTemplates, {
+        id: uid(),
+        category: "调研自定义",
+        appliesToTypes: selectedCompany?.companyType ? [selectedCompany.companyType] : [],
+        appliesToPositions: selectedCompany?.chainPosition ? [selectedCompany.chainPosition] : [],
+        question: normalized
+      }]
+    });
   }
 
   function saveQuestionSet() {
-    if (!draftQuestions.length || !questionSetName.trim()) return;
+    if (!questionTaskId || !selectedCompany || !draftQuestions.length || !questionSetName.trim()) return;
     const questionSet: QuestionSet = {
-      id: uid(),
+      id: editingQuestionSetId || uid(),
       workspaceId: state.activeWorkspaceId,
-      taskId: questionTaskId || undefined,
-      companyId: questionScope === "company" ? selectedCompany?.id ?? "" : "",
+      taskId: questionTaskId,
+      companyId: selectedCompany.id,
       name: questionSetName.trim(),
       focus: questionSetFocus.trim(),
-      version: 1,
+      version: state.questionSets.find((item) => item.id === editingQuestionSetId)?.version ?? 1,
       status: "草稿",
       generatedAt: new Date().toISOString().slice(0, 10),
       items: draftQuestions.map((content, index) => ({
@@ -1402,7 +1371,14 @@ function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedComp
         order: index + 1
       }))
     };
-    setState({ ...state, questionSets: [...state.questionSets, questionSet] });
+    const exists = state.questionSets.some((item) => item.id === questionSet.id);
+    setState({
+      ...state,
+      questionSets: exists
+        ? state.questionSets.map((item) => item.id === questionSet.id ? { ...questionSet, status: item.status, frozenAt: item.frozenAt } : item)
+        : [...state.questionSets, questionSet]
+    });
+    setEditingQuestionSetId(questionSet.id);
     setQuestionSetName("");
   }
 
@@ -1410,6 +1386,7 @@ function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedComp
     setDraftQuestions(questionSet.items.sort((a, b) => a.order - b.order).map((item) => item.content));
     setQuestionSetName(questionSet.name);
     setQuestionSetFocus(questionSet.focus);
+    setEditingQuestionSetId(questionSet.id);
   }
 
   function freezeQuestionSet(questionSetId: string) {
@@ -1432,24 +1409,40 @@ function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedComp
     <div className="grid two">
       <Panel title="编制访谈提纲">
         <div className="form-grid">
-          <label>所属调研项目<select value={questionTaskId} onChange={(event) => setQuestionTaskId(event.target.value)}>
-            <option value="">通用提纲</option>
+          <label>所属调研项目<select value={questionTaskId} onChange={(event) => changeTask(event.target.value)}>
+            <option value="">请选择调研项目</option>
             {workspaceTasks.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select></label>
-          <label>参考企业<select value={selectedCompany?.id ?? ""} onChange={(event) => {
-            setSelectedCompanyId(event.target.value);
-            const company = state.companies.find((item) => item.id === event.target.value);
-            if (company) setDraftQuestions(buildResearchQuestions(company, state));
-          }}>{state.companies.map((company) => <option key={company.id} value={company.id}>{company.name}</option>)}</select></label>
-          <label>适用范围<select value={questionScope} onChange={(event) => setQuestionScope(event.target.value as "general" | "company")}><option value="general">本项目通用</option><option value="company">仅参考企业</option></select></label>
-          <DetailItem label="参考企业角色" value={selectedCompany?.companyType ?? "-"} />
-          <DetailItem label="参考产业环节" value={selectedCompany?.chainPosition ?? "-"} />
+          <label>调研对象<select value={selectedObjectId} disabled={!questionTaskId} onChange={(event) => changeObject(event.target.value)}>
+            <option value="">请选择调研对象</option>
+            {projectObjects.map((sample) => {
+              const company = state.companies.find((item) => item.id === sample.companyId);
+              return <option key={sample.id} value={sample.companyId}>{company?.name || "企业待补充"}</option>;
+            })}
+          </select></label>
+          <DetailItem label="企业类型" value={selectedCompany?.companyType ?? "-"} />
+          <DetailItem label="产业链位置" value={selectedCompany?.chainPosition ?? "-"} />
         </div>
-        {companyIntelligence.length ? <div className="research-context"><strong>参考企业的公开线索</strong>{companyIntelligence.map((item) => <span key={item.id}>{item.type}：{item.title}（{item.verificationStatus}）</span>)}</div> : <div className="empty-stage">可先从问题库组装提纲；选择参考企业后，系统会结合企业画像和公开线索补充建议问题。</div>}
+        {!projectObjects.length && questionTaskId ? <div className="empty-stage">该项目尚未加入调研对象，请先到“调研对象”从企业库筛选并加入企业。</div> : null}
+        {companyIntelligence.length ? <div className="research-context"><strong>该企业的公开线索</strong>{companyIntelligence.map((item) => <span key={item.id}>{item.type}：{item.title}（{item.verificationStatus}）</span>)}</div> : null}
         <div className="question-generated-list">
           {draftQuestions.map((question, index) => (
-            <label key={`${question}-${index}`}>问题 {index + 1}<textarea value={question} onChange={(event) => setDraftQuestions(draftQuestions.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} /></label>
+            <div className="question-editor-row" key={`${question}-${index}`}>
+              <label>问题 {index + 1}<textarea value={question} onChange={(event) => setDraftQuestions(draftQuestions.map((item, itemIndex) => itemIndex === index ? event.target.value : item))} /></label>
+              <div className="question-editor-actions">
+                <button className="text-button" type="button" onClick={() => syncQuestionToLibrary(question)}>同步到问题库</button>
+                <button className="icon-button danger-outline" type="button" title="移除问题" onClick={() => removeQuestion(index)}><X size={16} /></button>
+              </div>
+            </div>
           ))}
+          {!draftQuestions.length ? <div className="empty-stage">请从右侧问题库添加问题，或点击“推荐问题”后选择加入。</div> : null}
+        </div>
+        <div className="question-add-row">
+          <Field label="新增自定义问题" value={newQuestion} onChange={setNewQuestion} />
+          <button className="button secondary" type="button" disabled={!newQuestion.trim()} onClick={() => {
+            addQuestion(newQuestion);
+            setNewQuestion("");
+          }}><Plus size={16} /> 加入提纲</button>
         </div>
         <div className="outline-actions">
           <div className="outline-fields">
@@ -1457,14 +1450,23 @@ function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedComp
             <Field label="访谈重点" value={questionSetFocus} onChange={setQuestionSetFocus} />
           </div>
           <div className="outline-action-buttons">
-            <button className="button secondary" type="button" onClick={refreshQuestions}><Sparkles size={16} /> 重新生成</button>
-            <button className="button" type="button" onClick={saveQuestionSet}><ClipboardList size={16} /> 保存提纲</button>
+            <button className="button secondary" type="button" disabled={!selectedCompany} onClick={recommendQuestions}><Sparkles size={16} /> 推荐问题</button>
+            <button className="button" type="button" disabled={!selectedCompany} onClick={saveQuestionSet}><ClipboardList size={16} /> 保存提纲</button>
           </div>
         </div>
       </Panel>
 
+      <Panel title="问题库与推荐问题">
+        <div className="toolbar"><div className="search-box"><Search size={17} /><input value={libraryKeyword} onChange={(event) => setLibraryKeyword(event.target.value)} placeholder="搜索可加入的问题" /></div></div>
+        <div className="question-choice-list">
+          {selectableTemplates.map((template) => <div className="question-choice" key={template.id}><div><strong>{template.category}</strong><span>{template.question}</span></div><button className="button secondary" type="button" onClick={() => addQuestion(template.question)}><Plus size={16} /> 加入</button></div>)}
+          {!selectableTemplates.length && selectedCompany ? <div className="empty-stage">没有匹配的问题，可在“问题库”中维护，或直接新增自定义问题。</div> : null}
+        </div>
+        {suggestedQuestions.length ? <div className="suggestion-area"><strong>基于企业画像、项目和公开线索的推荐</strong>{suggestedQuestions.map((question) => <div className="question-choice" key={question}><span>{question}</span><button className="button secondary" type="button" onClick={() => addQuestion(question)}><Plus size={16} /> 加入</button></div>)}</div> : null}
+      </Panel>
+
       <Panel title="已保存访谈提纲">
-        {savedQuestionSets.length ? <div className="question-set-list">{savedQuestionSets.map((item) => <div className="question-set-card" key={item.id}><button type="button" onClick={() => loadQuestionSet(item)}><strong>{item.name}</strong><span>{item.focus} / {item.companyId ? "仅该企业" : "项目通用"} / {item.status === "已冻结" ? "已定稿" : "编辑中"}</span></button><div className="inline-actions">{item.status === "草稿" ? <button className="text-button" type="button" onClick={() => freezeQuestionSet(item.id)}>定稿</button> : null}<button className="icon-button danger-outline" type="button" title="删除访谈提纲" onClick={() => deleteQuestionSet(item)}><X size={16} /></button></div></div>)}</div> : <div className="empty-stage">当前项目还没有保存的访谈提纲。</div>}
+        {savedQuestionSets.length ? <div className="question-set-list">{savedQuestionSets.map((item) => <div className="question-set-card" key={item.id}><button type="button" onClick={() => loadQuestionSet(item)}><strong>{item.name}</strong><span>{item.focus} / 当前调研对象 / {item.status === "已冻结" ? "已定稿" : "编辑中"}</span></button><div className="inline-actions">{item.status === "草稿" ? <button className="text-button" type="button" onClick={() => freezeQuestionSet(item.id)}>定稿</button> : null}<button className="icon-button danger-outline" type="button" title="删除访谈提纲" onClick={() => deleteQuestionSet(item)}><X size={16} /></button></div></div>)}</div> : <div className="empty-stage">当前项目和调研对象还没有保存的访谈提纲。</div>}
       </Panel>
     </div>
   );
@@ -1886,6 +1888,8 @@ function ResearchArchive({ state }: { state: AppState }) {
   const [chainPosition, setChainPosition] = useState("");
   const [startAt, setStartAt] = useState("");
   const [endAt, setEndAt] = useState("");
+  const [groupBy, setGroupBy] = useState<"task" | "company">("task");
+  const [selectedRecordId, setSelectedRecordId] = useState("");
   const tasks = state.researchTasks.filter((item) => item.workspaceId === state.activeWorkspaceId);
   const companies = state.companies.filter((item) => item.workspaceId === state.activeWorkspaceId);
   const companyTypes = Array.from(new Set(companies.map((item) => item.companyType).filter(Boolean))).sort();
@@ -1920,6 +1924,20 @@ function ResearchArchive({ state }: { state: AppState }) {
         && (!endAt || date <= endAt);
     }), [state, keyword, taskId, companyType, chainPosition, startAt, endAt]);
   const needCount = rows.reduce((total, row) => total + row.record.needs.length, 0);
+  const recordGroups = useMemo(() => {
+    const grouped = new Map<string, { name: string; rows: typeof rows }>();
+    rows.forEach((row) => {
+      const key = groupBy === "task" ? row.plan?.taskId || "unassigned-task" : row.company?.id || "unassigned-company";
+      const name = groupBy === "task"
+        ? tasks.find((item) => item.id === row.plan?.taskId)?.name || "未归属调研项目"
+        : row.company?.name || "企业待补充";
+      const group = grouped.get(key) ?? { name, rows: [] };
+      group.rows.push(row);
+      grouped.set(key, group);
+    });
+    return Array.from(grouped.entries()).map(([id, group]) => ({ id, ...group }));
+  }, [rows, groupBy, tasks]);
+  const selectedRow = rows.find((row) => row.record.id === selectedRecordId);
 
   return (
     <div className="grid">
@@ -1931,6 +1949,7 @@ function ResearchArchive({ state }: { state: AppState }) {
           <label>产业链位置<select value={chainPosition} onChange={(event) => setChainPosition(event.target.value)}><option value="">全部位置</option>{chainPositions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
           <Field label="开始日期" type="date" value={startAt} onChange={setStartAt} />
           <Field label="结束日期" type="date" value={endAt} onChange={setEndAt} />
+          <label>归集方式<select value={groupBy} onChange={(event) => setGroupBy(event.target.value as "task" | "company")}><option value="task">按调研项目</option><option value="company">按调研对象</option></select></label>
         </div>
       </Panel>
 
@@ -1941,25 +1960,71 @@ function ResearchArchive({ state }: { state: AppState }) {
         <Metric icon={<CalendarDays />} label="关联计划" value={new Set(rows.map((row) => row.record.planId).filter(Boolean)).size} />
       </section>
 
-      <Panel title="调研记录">
+      <Panel title={`调研记录（${groupBy === "task" ? "按调研项目" : "按调研对象"}归集）`}>
         <div className="archive-list">
-          {rows.map((row) => <article className="archive-row" key={row.record.id}>
-            <div className="archive-row-heading">
-              <div><strong>{row.company?.name}</strong><span>{row.company?.companyType} / {row.company?.chainPosition} / {row.company?.scale}</span></div>
-              <em>{row.record.date}</em>
-            </div>
-            <div className="archive-meta">
-              <span>项目：{tasks.find((item) => item.id === row.plan?.taskId)?.name || "未归属项目"}</span>
-              <span>计划：{row.plan?.name || row.plan?.objective || "-"}</span>
-              <span>访谈提纲：{row.questionSet?.name || `快照 ${row.arrangement?.questionSnapshot.length ?? 0} 题`}</span>
-              <span>录入人：{row.record.interviewer}</span>
-            </div>
-            <p>{row.record.conclusion || row.record.summary || "已保存调研记录，待补充结论。"}</p>
-            {row.record.needs.length ? <div className="policy-tags">{row.record.needs.map((need) => <span key={need.id}>{need.category} / {need.priority} / {need.status}</span>)}</div> : null}
-          </article>)}
+          {recordGroups.map((group) => <section className="archive-group" key={group.id}>
+            <div className="archive-group-heading"><strong>{group.name}</strong><span>{group.rows.length} 条记录</span></div>
+            {group.rows.map((row) => <article className="archive-row" key={row.record.id}>
+              <div className="archive-row-heading">
+                <div><strong>{row.company?.name}</strong><span>{row.company?.companyType} / {row.company?.chainPosition} / {row.company?.scale}</span></div>
+                <em>{row.record.date}</em>
+              </div>
+              <div className="archive-meta">
+                <span>项目：{tasks.find((item) => item.id === row.plan?.taskId)?.name || "未归属项目"}</span>
+                <span>计划：{row.plan?.name || row.plan?.objective || "-"}</span>
+                <span>访谈提纲：{row.questionSet?.name || `快照 ${row.arrangement?.questionSnapshot.length ?? 0} 题`}</span>
+                <span>录入人：{row.record.interviewer}</span>
+              </div>
+              <p>{row.record.conclusion || row.record.summary || "已保存调研记录，待补充结论。"}</p>
+              <div className="archive-row-footer">
+                {row.record.needs.length ? <div className="policy-tags">{row.record.needs.map((need) => <span key={need.id}>{need.category} / {need.priority} / {need.status}</span>)}</div> : <span className="muted-text">未提取需求候选</span>}
+                <button className="button secondary" type="button" onClick={() => setSelectedRecordId(row.record.id)}>查看详情</button>
+              </div>
+            </article>)}
+          </section>)}
           {!rows.length ? <div className="empty-stage">当前条件下没有已完成的调研记录。</div> : null}
         </div>
       </Panel>
+      {selectedRow ? <ResearchRecordDrawer row={selectedRow} task={tasks.find((item) => item.id === selectedRow.plan?.taskId)} onClose={() => setSelectedRecordId("")} /> : null}
+    </div>
+  );
+}
+
+function ResearchRecordDrawer({ row, task, onClose }: {
+  row: {
+    company: ResearchCompany | undefined;
+    plan: ResearchPlan | undefined;
+    record: ResearchRecord;
+    arrangement: PlanTarget | undefined;
+    questionSet: QuestionSet | undefined;
+  };
+  task: ResearchTask | undefined;
+  onClose: () => void;
+}) {
+  return (
+    <div className="drawer-layer" onMouseDown={onClose}>
+      <aside className="drawer record-detail-drawer" onMouseDown={(event) => event.stopPropagation()}>
+        <div className="drawer-head">
+          <div><h2>调研记录详情</h2><p>{row.company?.name || "企业待补充"} / {row.record.date}</p></div>
+          <button className="icon-button" type="button" title="关闭" onClick={onClose}><X size={18} /></button>
+        </div>
+        <div className="drawer-content">
+          <div className="detail-grid">
+            <DetailItem label="调研项目" value={task?.name || "未归属项目"} />
+            <DetailItem label="调研计划" value={row.plan?.name || row.plan?.objective || "-"} />
+            <DetailItem label="调研对象" value={row.company?.name || "-"} />
+            <DetailItem label="录入人" value={row.record.interviewer || "-"} />
+            <DetailItem label="访谈方式" value={row.arrangement?.method || "-"} />
+            <DetailItem label="责任人" value={row.arrangement?.owner || row.plan?.owner || "-"} />
+          </div>
+          <section className="detail-section"><h3>调研摘要</h3><p>{row.record.summary || "未填写"}</p></section>
+          <section className="detail-section"><h3>调研结论</h3><p>{row.record.conclusion || "未填写"}</p></section>
+          <section className="detail-section"><h3>数字化需求候选</h3>{row.record.needs.length ? <ul>{row.record.needs.map((need) => <li key={need.id}><strong>{need.category} / {need.priority} / {need.status}</strong><br />{need.description}<br /><span>{need.capability}</span></li>)}</ul> : <p>未提取需求候选。</p>}</section>
+          <section className="detail-section"><h3>访谈提纲</h3>{row.questionSet?.items.length ? <ul>{row.questionSet.items.sort((a, b) => a.order - b.order).map((item) => <li key={item.id}>{item.content}</li>)}</ul> : <p>{row.arrangement?.questionSnapshot.length ? row.arrangement.questionSnapshot.join("\n") : "未保留提纲信息"}</p>}</section>
+          {row.record.audioUrl ? <section className="detail-section"><h3>录音文件</h3><audio controls src={row.record.audioUrl} /><p>{row.record.audioName || "调研录音"}</p></section> : null}
+          <section className="detail-section"><h3>语音转写文本</h3><p className="multiline-text">{row.record.transcript || "未填写"}</p></section>
+        </div>
+      </aside>
     </div>
   );
 }

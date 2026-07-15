@@ -1237,6 +1237,77 @@ label {
   min-height: 76px;
 }
 
+.question-editor-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 12px;
+}
+
+.question-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-bottom: 1px;
+}
+
+.question-add-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: end;
+  margin-top: 14px;
+}
+
+.question-choice-list,
+.suggestion-area {
+  display: grid;
+  gap: 10px;
+}
+
+.suggestion-area {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.suggestion-area > strong {
+  color: var(--ink);
+  font-size: 14px;
+}
+
+.question-choice {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fbfdff;
+  padding: 11px 12px;
+}
+
+.question-choice div,
+.question-choice span {
+  color: #334155;
+  line-height: 1.55;
+}
+
+.question-choice strong,
+.question-choice span {
+  display: block;
+}
+
+.question-choice strong {
+  color: var(--brand-dark);
+  font-size: 12px;
+  margin-bottom: 4px;
+}
+
 .drawer-actions-inline {
   display: flex;
   align-items: center;
@@ -1894,6 +1965,45 @@ label {
   line-height: 1.65;
 }
 
+.archive-group {
+  display: grid;
+  gap: 10px;
+}
+
+.archive-group-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--line);
+  padding: 4px 0 8px;
+}
+
+.archive-group-heading strong {
+  color: var(--ink);
+}
+
+.archive-group-heading span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.archive-row-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.record-detail-drawer {
+  width: min(680px, 100vw);
+}
+
+.multiline-text {
+  white-space: pre-wrap;
+}
+
 @media (max-width: 980px) {
   .app-shell {
     grid-template-columns: 1fr;
@@ -1956,6 +2066,16 @@ label {
   .sample-controls {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .question-editor-row,
+  .question-add-row {
+    grid-template-columns: 1fr;
+  }
+
+  .question-editor-actions,
+  .archive-row-footer {
+    justify-content: flex-start;
   }
 
   .company-row {
