@@ -820,6 +820,38 @@ label {
   gap: 10px;
 }
 
+.project-overview-grid {
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+
+.project-overview-link {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfdff;
+  color: var(--ink);
+  padding: 13px;
+  text-align: left;
+}
+
+.project-overview-link:hover {
+  border-color: #9db8f7;
+  background: #f3f7ff;
+}
+
+.project-overview-link span,
+.project-overview-link small {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.project-overview-link strong {
+  color: var(--brand-dark);
+  font-size: 22px;
+}
+
 .detail-item {
   border: 1px solid var(--line);
   border-radius: 12px;
@@ -1263,6 +1295,18 @@ label {
   margin-top: 14px;
 }
 
+.outline-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.16fr) minmax(360px, 0.84fr);
+  align-items: start;
+  gap: 18px;
+}
+
+.outline-side {
+  display: grid;
+  gap: 18px;
+}
+
 .question-choice-list,
 .suggestion-area {
   display: grid;
@@ -1306,6 +1350,32 @@ label {
   color: var(--brand-dark);
   font-size: 12px;
   margin-bottom: 4px;
+}
+
+.source-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #f7faff;
+  padding: 4px;
+  margin-bottom: 14px;
+}
+
+.source-tabs button {
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--muted);
+  padding: 8px 10px;
+  font-weight: 700;
+}
+
+.source-tabs button.active {
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, .12);
+  color: var(--brand-dark);
 }
 
 .drawer-actions-inline {
@@ -1803,6 +1873,38 @@ label {
   padding: 12px;
 }
 
+.research-object-row {
+  position: relative;
+  padding-right: 58px;
+}
+
+.object-remove-button {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+}
+
+.add-object-button {
+  color: var(--brand);
+  border-color: #bfd3ff;
+}
+
+.add-object-button:disabled {
+  background: #f1f5f9;
+  color: #94a3b8;
+  border-color: #e2e8f0;
+}
+
+.object-task-selector {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fbfdff;
+  padding: 14px;
+}
+
 .sample-row strong,
 .sample-row span,
 .sample-row small,
@@ -2043,6 +2145,7 @@ label {
 
   .metric-grid,
   .grid.two,
+  .outline-layout,
   .form-grid,
   .need-board,
   .archive-filters,
@@ -2076,6 +2179,10 @@ label {
   .question-editor-actions,
   .archive-row-footer {
     justify-content: flex-start;
+  }
+
+  .project-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .company-row {

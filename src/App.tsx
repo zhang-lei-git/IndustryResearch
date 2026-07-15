@@ -228,6 +228,7 @@ export function App() {
             <NavItem icon={<Target size={18} />} label="调研项目" active={active === "projects"} onClick={() => setActive("projects")} />
             <NavItem icon={<Building2 size={18} />} label="调研对象" active={active === "objects"} onClick={() => setActive("objects")} />
             <NavItem icon={<ClipboardList size={18} />} label="访谈提纲" active={active === "questions"} onClick={() => setActive("questions")} />
+            <NavItem icon={<ClipboardList size={18} />} label="问题库" active={active === "question-library"} onClick={() => setActive("question-library")} />
             <NavItem icon={<CalendarDays size={18} />} label="调研计划" active={active === "plans"} onClick={() => setActive("plans")} />
             <NavItem icon={<Mic2 size={18} />} label="调研执行" active={active === "records"} onClick={() => setActive("records")} />
             <NavItem icon={<Search size={18} />} label="调研记录库" active={active === "archives"} onClick={() => setActive("archives")} />
@@ -239,7 +240,6 @@ export function App() {
           <NavGroup label="决策与资产">
             <NavItem icon={<Lightbulb size={18} />} label="决策中心" active={active === "advice"} onClick={() => setActive("advice")} />
             <NavItem icon={<Settings2 size={18} />} label="知识资产" active={active === "knowledge"} onClick={() => setActive("knowledge")} />
-            <NavItem icon={<ClipboardList size={18} />} label="问题库" active={active === "question-library"} onClick={() => setActive("question-library")} />
           </NavGroup>
         </nav>
       </aside>
@@ -261,7 +261,7 @@ export function App() {
         {active === "companies" ? <Companies state={state} setState={updateState} selectedCompanyId={selectedCompanyId} setSelectedCompanyId={setSelectedCompanyId} openCompanyProfile={openCompanyProfile} /> : null}
         {active === "intelligence" ? <IntelligenceCenter state={state} setState={updateState} openCompanyProfile={openCompanyProfile} /> : null}
         {active === "chain" ? <IndustryChainMap state={state} openCompanyProfile={openCompanyProfile} /> : null}
-        {active === "projects" ? <ResearchTasks mode="project" state={state} setState={updateState} /> : null}
+        {active === "projects" ? <ResearchTasks mode="project" state={state} setState={updateState} onNavigate={setActive} /> : null}
         {active === "objects" ? <ResearchTasks mode="object" state={state} setState={updateState} /> : null}
         {active === "questions" ? <QuestionGenerator state={state} setState={updateState} selectedCompanyId={selectedCompanyId} setSelectedCompanyId={setSelectedCompanyId} /> : null}
         {active === "policies" ? <PolicyMatch state={state} setState={updateState} /> : null}
@@ -1024,7 +1024,12 @@ function IntelligenceCenter({ state, setState, openCompanyProfile }: { state: Ap
   );
 }
 
-function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; state: AppState; setState: (state: AppState) => void }) {
+function ResearchTasks({ mode, state, setState, onNavigate }: {
+  mode: "project" | "object";
+  state: AppState;
+  setState: (state: AppState) => void;
+  onNavigate?: (page: string) => void;
+}) {
   const workspaceTasks = state.researchTasks.filter((item) => item.workspaceId === state.activeWorkspaceId);
   const [taskId, setTaskId] = useState(workspaceTasks.find((item) => item.status === "进行中")?.id ?? workspaceTasks[0]?.id ?? "");
   const task = workspaceTasks.find((item) => item.id === taskId);
@@ -1176,6 +1181,14 @@ function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; 
   return (
     mode === "project" ? (
       <div className="grid">
+        <Panel title="项目概览">
+          <div className="detail-grid project-overview-grid">
+            <button className="project-overview-link" type="button" onClick={() => onNavigate?.("objects")}><span>调研对象</span><strong>{researchObjects.length} 家</strong><small>查看并维护本项目企业</small></button>
+            <button className="project-overview-link" type="button" onClick={() => onNavigate?.("plans")}><span>已制定计划</span><strong>{state.plans.filter((plan) => plan.taskId === taskId).length} 个</strong><small>查看企业时间与责任人安排</small></button>
+            <button className="project-overview-link" type="button" onClick={() => onNavigate?.("archives")}><span>已完成记录</span><strong>{state.records.filter((record) => state.plans.find((plan) => plan.id === record.planId)?.taskId === taskId).length} 条</strong><small>查看调研结论与需求</small></button>
+            <button className="project-overview-link" type="button" onClick={() => onNavigate?.("research")}><span>关联专题</span><strong>{draft.topicIds.length} 个</strong><small>查看专题假设与证据</small></button>
+          </div>
+        </Panel>
         <Panel title="调研项目">
         <div className="form-grid">
           <label>当前调研项目<select value={taskId} onChange={(event) => selectTask(event.target.value)}>
@@ -1211,26 +1224,16 @@ function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; 
           {task ? <button className="button danger" type="button" onClick={deleteTask}>删除项目</button> : null}
         </div>
         </Panel>
-        <Panel title="项目概览">
-          <div className="detail-grid">
-            <DetailItem label="调研对象" value={`${researchObjects.length} 家`} />
-            <DetailItem label="已制定计划" value={`${state.plans.filter((plan) => plan.taskId === taskId).length} 个`} />
-            <DetailItem label="已完成记录" value={`${state.records.filter((record) => state.plans.find((plan) => plan.id === record.planId)?.taskId === taskId).length} 条`} />
-            <DetailItem label="关联专题" value={`${draft.topicIds.length} 个`} />
-          </div>
-        </Panel>
       </div>
     ) : (
       <div className="grid two">
-      <Panel title="选择调研对象">
-        <div className="form-grid">
+      <section className="object-task-selector">
           <label>所属调研项目<select value={taskId} onChange={(event) => selectTask(event.target.value)}>
             <option value="">请选择调研项目</option>
             {workspaceTasks.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select></label>
-        </div>
-        {!task ? <div className="empty-stage">请先在“调研项目”中创建或选择一个项目。</div> : null}
-      </Panel>
+          {!task ? <span className="field-warning">请先在“调研项目”中创建或选择一个项目。</span> : null}
+      </section>
       <Panel title="从企业库筛选并加入">
         <div className="form-grid">
           <Field label="企业名称、行业或关键词" value={companyKeyword} onChange={setCompanyKeyword} />
@@ -1251,7 +1254,7 @@ function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; 
             return <div className="sample-row" key={company.id}>
               <div><strong>{company.name}</strong><span>{company.companyType} / {company.chainPosition} / {company.scale}</span><small>{company.industry || "制造业企业"}</small></div>
               <div className="sample-controls">
-                <button className="button secondary" type="button" disabled={!task || alreadyAdded} onClick={() => addSample(company.id)}><Plus size={16} /> {alreadyAdded ? "已加入" : "加入调研对象"}</button>
+                <button className="icon-button add-object-button" type="button" title={alreadyAdded ? "已加入调研对象" : "加入调研对象"} disabled={!task || alreadyAdded} onClick={() => addSample(company.id)}><Plus size={18} /></button>
               </div>
             </div>;
           })}
@@ -1263,13 +1266,13 @@ function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; 
         <div className="sample-list">
           {researchObjects.map((sample) => {
             const company = state.companies.find((item) => item.id === sample.companyId);
-            return <div className="sample-row" key={sample.id}>
+            return <div className="sample-row research-object-row" key={sample.id}>
               <div><strong>{company?.name || "企业待补充"}</strong><span>{company?.companyType} / {company?.chainPosition} / {company?.scale}</span><small>{sample.selectionReason}</small></div>
               <div className="sample-controls">
                 <label>优先级<select value={sample.priority} onChange={(event) => updateSample(sample.id, { priority: event.target.value as ResearchSample["priority"] })}><option>高</option><option>中</option><option>低</option></select></label>
                 <label>调研状态<select value={sample.status} onChange={(event) => updateSample(sample.id, { status: event.target.value as ResearchSample["status"] })}><option value="已选定">已确认</option><option value="已计划">已安排</option><option value="已完成">已完成</option><option value="需复访">需复访</option><option value="已排除">不纳入本轮</option></select></label>
-                <button className="icon-button danger-outline" type="button" title="移除调研对象" onClick={() => deleteSample(sample)}><X size={16} /></button>
               </div>
+              <button className="icon-button danger-outline object-remove-button" type="button" title="移除调研对象" onClick={() => deleteSample(sample)}><X size={16} /></button>
             </div>;
           })}
           {!researchObjects.length ? <div className="empty-stage">尚未加入调研对象。请从上方企业库筛选结果中人工选择企业加入。</div> : null}
@@ -1281,11 +1284,14 @@ function ResearchTasks({ mode, state, setState }: { mode: "project" | "object"; 
 }
 
 function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedCompanyId }: { state: AppState; setState: (state: AppState) => void; selectedCompanyId: string; setSelectedCompanyId: (id: string) => void }) {
+  const allObjectsValue = "__all__";
   const workspaceTasks = state.researchTasks.filter((item) => item.workspaceId === state.activeWorkspaceId);
   const [questionTaskId, setQuestionTaskId] = useState(workspaceTasks.find((item) => item.status === "进行中")?.id ?? workspaceTasks[0]?.id ?? "");
   const projectObjects = state.researchSamples.filter((sample) => sample.taskId === questionTaskId && sample.status !== "候选" && sample.status !== "已排除");
-  const selectedObjectId = projectObjects.some((sample) => sample.companyId === selectedCompanyId) ? selectedCompanyId : projectObjects[0]?.companyId ?? "";
-  const selectedCompany = state.companies.find((company) => company.id === selectedObjectId);
+  const [questionObjectId, setQuestionObjectId] = useState(() => projectObjects.some((sample) => sample.companyId === selectedCompanyId) ? selectedCompanyId : projectObjects[0]?.companyId ?? allObjectsValue);
+  const isCommonOutline = questionObjectId === allObjectsValue;
+  const selectedCompany = isCommonOutline ? undefined : state.companies.find((company) => company.id === questionObjectId);
+  const recommendationCompany = selectedCompany ?? state.companies.find((company) => company.id === projectObjects[0]?.companyId);
   const [draftQuestions, setDraftQuestions] = useState<string[]>([]);
   const [questionSetName, setQuestionSetName] = useState("");
   const [questionSetFocus, setQuestionSetFocus] = useState("首访画像与数字化需求");
@@ -1293,27 +1299,33 @@ function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedComp
   const [libraryKeyword, setLibraryKeyword] = useState("");
   const [newQuestion, setNewQuestion] = useState("");
   const [suggestedQuestions, setSuggestedQuestions] = useState<string[]>([]);
+  const [sourceMode, setSourceMode] = useState<"library" | "recommended">("library");
   const companyIntelligence = selectedCompany ? state.intelligence.filter((item) => intelligenceBelongsToCompany(item, selectedCompany.id) && intelligenceIsRelevant(item)) : [];
   const savedQuestionSets = state.questionSets
-    .filter((item) => item.taskId === questionTaskId && item.companyId === selectedObjectId)
+    .filter((item) => item.taskId === questionTaskId && (isCommonOutline ? !item.companyId : item.companyId === questionObjectId))
     .sort((a, b) => b.generatedAt.localeCompare(a.generatedAt));
-  const selectableTemplates = selectedCompany ? state.questionTemplates
-    .filter((template) => templateMatchesCompany(template, selectedCompany))
+  const selectableTemplates = (isCommonOutline ? state.questionTemplates : selectedCompany ? state.questionTemplates.filter((template) => templateMatchesCompany(template, selectedCompany)) : [])
     .filter((template) => [template.category, template.question, ...template.appliesToTypes, ...template.appliesToPositions].join(" ").toLowerCase().includes(libraryKeyword.toLowerCase()))
-    .slice(0, 20) : [];
+    .slice(0, 20);
+
+  useEffect(() => {
+    if (selectedCompanyId && projectObjects.some((sample) => sample.companyId === selectedCompanyId)) setQuestionObjectId(selectedCompanyId);
+  }, [selectedCompanyId, questionTaskId]);
 
   function changeTask(nextTaskId: string) {
     const nextObjects = state.researchSamples.filter((sample) => sample.taskId === nextTaskId && sample.status !== "候选" && sample.status !== "已排除");
     setQuestionTaskId(nextTaskId);
     setSelectedCompanyId(nextObjects[0]?.companyId ?? "");
+    setQuestionObjectId(nextObjects[0]?.companyId ?? allObjectsValue);
     setDraftQuestions([]);
     setSuggestedQuestions([]);
     setEditingQuestionSetId("");
     setQuestionSetName("");
   }
 
-  function changeObject(companyId: string) {
-    setSelectedCompanyId(companyId);
+  function changeObject(objectId: string) {
+    setQuestionObjectId(objectId);
+    if (objectId !== allObjectsValue) setSelectedCompanyId(objectId);
     setDraftQuestions([]);
     setSuggestedQuestions([]);
     setEditingQuestionSetId("");
@@ -1321,8 +1333,11 @@ function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedComp
   }
 
   function recommendQuestions() {
-    if (!selectedCompany) return;
-    setSuggestedQuestions(buildResearchQuestions(selectedCompany, state).filter((question) => !draftQuestions.includes(question)));
+    const recommendations = isCommonOutline
+      ? state.questionTemplates.filter((template) => !template.appliesToTypes.length && !template.appliesToPositions.length).map((template) => template.question)
+      : recommendationCompany ? buildResearchQuestions(recommendationCompany, state) : [];
+    setSuggestedQuestions(Array.from(new Set(recommendations)).filter((question) => !draftQuestions.includes(question)));
+    setSourceMode("recommended");
   }
 
   function addQuestion(question: string) {
@@ -1352,12 +1367,12 @@ function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedComp
   }
 
   function saveQuestionSet() {
-    if (!questionTaskId || !selectedCompany || !draftQuestions.length || !questionSetName.trim()) return;
+    if (!questionTaskId || (!isCommonOutline && !selectedCompany) || !draftQuestions.length || !questionSetName.trim()) return;
     const questionSet: QuestionSet = {
       id: editingQuestionSetId || uid(),
       workspaceId: state.activeWorkspaceId,
       taskId: questionTaskId,
-      companyId: selectedCompany.id,
+      companyId: isCommonOutline ? "" : selectedCompany?.id ?? "",
       name: questionSetName.trim(),
       focus: questionSetFocus.trim(),
       version: state.questionSets.find((item) => item.id === editingQuestionSetId)?.version ?? 1,
@@ -1406,22 +1421,26 @@ function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedComp
   }
 
   return (
-    <div className="grid two">
+    <div className="outline-layout">
       <Panel title="编制访谈提纲">
         <div className="form-grid">
           <label>所属调研项目<select value={questionTaskId} onChange={(event) => changeTask(event.target.value)}>
             <option value="">请选择调研项目</option>
             {workspaceTasks.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select></label>
-          <label>调研对象<select value={selectedObjectId} disabled={!questionTaskId} onChange={(event) => changeObject(event.target.value)}>
-            <option value="">请选择调研对象</option>
+          <label>调研对象<select value={questionObjectId} disabled={!questionTaskId} onChange={(event) => changeObject(event.target.value)}>
+            <option value={allObjectsValue}>所有调研对象（共通提纲）</option>
             {projectObjects.map((sample) => {
               const company = state.companies.find((item) => item.id === sample.companyId);
               return <option key={sample.id} value={sample.companyId}>{company?.name || "企业待补充"}</option>;
             })}
           </select></label>
-          <DetailItem label="企业类型" value={selectedCompany?.companyType ?? "-"} />
-          <DetailItem label="产业链位置" value={selectedCompany?.chainPosition ?? "-"} />
+          <DetailItem label="企业类型" value={isCommonOutline ? "所有类型" : selectedCompany?.companyType ?? "-"} />
+          <DetailItem label="产业链位置" value={isCommonOutline ? "全部环节" : selectedCompany?.chainPosition ?? "-"} />
+        </div>
+        <div className="outline-fields">
+          <Field label="访谈提纲名称" value={questionSetName} onChange={setQuestionSetName} />
+          <Field label="访谈重点" value={questionSetFocus} onChange={setQuestionSetFocus} />
         </div>
         {!projectObjects.length && questionTaskId ? <div className="empty-stage">该项目尚未加入调研对象，请先到“调研对象”从企业库筛选并加入企业。</div> : null}
         {companyIntelligence.length ? <div className="research-context"><strong>该企业的公开线索</strong>{companyIntelligence.map((item) => <span key={item.id}>{item.type}：{item.title}（{item.verificationStatus}）</span>)}</div> : null}
@@ -1442,32 +1461,37 @@ function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedComp
           <button className="button secondary" type="button" disabled={!newQuestion.trim()} onClick={() => {
             addQuestion(newQuestion);
             setNewQuestion("");
-          }}><Plus size={16} /> 加入提纲</button>
+          }}><Plus size={18} /></button>
         </div>
         <div className="outline-actions">
-          <div className="outline-fields">
-            <Field label="访谈提纲名称" value={questionSetName} onChange={setQuestionSetName} />
-            <Field label="访谈重点" value={questionSetFocus} onChange={setQuestionSetFocus} />
-          </div>
           <div className="outline-action-buttons">
-            <button className="button secondary" type="button" disabled={!selectedCompany} onClick={recommendQuestions}><Sparkles size={16} /> 推荐问题</button>
-            <button className="button" type="button" disabled={!selectedCompany} onClick={saveQuestionSet}><ClipboardList size={16} /> 保存提纲</button>
+            <button className="button secondary" type="button" disabled={!recommendationCompany && !isCommonOutline} onClick={recommendQuestions}><Sparkles size={16} /> 推荐问题</button>
+            <button className="button" type="button" disabled={!questionTaskId} onClick={saveQuestionSet}><ClipboardList size={16} /> 保存提纲</button>
           </div>
         </div>
       </Panel>
 
-      <Panel title="问题库与推荐问题">
-        <div className="toolbar"><div className="search-box"><Search size={17} /><input value={libraryKeyword} onChange={(event) => setLibraryKeyword(event.target.value)} placeholder="搜索可加入的问题" /></div></div>
-        <div className="question-choice-list">
-          {selectableTemplates.map((template) => <div className="question-choice" key={template.id}><div><strong>{template.category}</strong><span>{template.question}</span></div><button className="button secondary" type="button" onClick={() => addQuestion(template.question)}><Plus size={16} /> 加入</button></div>)}
-          {!selectableTemplates.length && selectedCompany ? <div className="empty-stage">没有匹配的问题，可在“问题库”中维护，或直接新增自定义问题。</div> : null}
-        </div>
-        {suggestedQuestions.length ? <div className="suggestion-area"><strong>基于企业画像、项目和公开线索的推荐</strong>{suggestedQuestions.map((question) => <div className="question-choice" key={question}><span>{question}</span><button className="button secondary" type="button" onClick={() => addQuestion(question)}><Plus size={16} /> 加入</button></div>)}</div> : null}
-      </Panel>
-
-      <Panel title="已保存访谈提纲">
-        {savedQuestionSets.length ? <div className="question-set-list">{savedQuestionSets.map((item) => <div className="question-set-card" key={item.id}><button type="button" onClick={() => loadQuestionSet(item)}><strong>{item.name}</strong><span>{item.focus} / 当前调研对象 / {item.status === "已冻结" ? "已定稿" : "编辑中"}</span></button><div className="inline-actions">{item.status === "草稿" ? <button className="text-button" type="button" onClick={() => freezeQuestionSet(item.id)}>定稿</button> : null}<button className="icon-button danger-outline" type="button" title="删除访谈提纲" onClick={() => deleteQuestionSet(item)}><X size={16} /></button></div></div>)}</div> : <div className="empty-stage">当前项目和调研对象还没有保存的访谈提纲。</div>}
-      </Panel>
+      <div className="outline-side">
+        <Panel title="问题来源">
+          <div className="source-tabs">
+            <button className={sourceMode === "library" ? "active" : ""} type="button" onClick={() => setSourceMode("library")}>问题库</button>
+            <button className={sourceMode === "recommended" ? "active" : ""} type="button" onClick={() => setSourceMode("recommended")}>推荐问题{suggestedQuestions.length ? `（${suggestedQuestions.length}）` : ""}</button>
+          </div>
+          {sourceMode === "library" ? <>
+            <div className="toolbar"><div className="search-box"><Search size={17} /><input value={libraryKeyword} onChange={(event) => setLibraryKeyword(event.target.value)} placeholder="搜索分类、问题或适用范围" /></div></div>
+            <div className="question-choice-list">
+              {selectableTemplates.map((template) => <div className="question-choice" key={template.id}><div><strong>{template.category}</strong><span>{template.question}</span></div><button className="icon-button add-object-button" type="button" title="加入访谈提纲" onClick={() => addQuestion(template.question)}><Plus size={18} /></button></div>)}
+              {!selectableTemplates.length ? <div className="empty-stage">没有匹配的问题，可在“问题库”中维护或新增自定义问题。</div> : null}
+            </div>
+          </> : <div className="question-choice-list">
+            {suggestedQuestions.map((question) => <div className="question-choice" key={question}><span>{question}</span><button className="icon-button add-object-button" type="button" title="加入访谈提纲" onClick={() => addQuestion(question)}><Plus size={18} /></button></div>)}
+            {!suggestedQuestions.length ? <div className="empty-stage">点击左侧“推荐问题”后，系统会基于当前项目、调研对象和公开线索生成可选择的问题。</div> : null}
+          </div>}
+        </Panel>
+        <Panel title="已保存访谈提纲">
+          {savedQuestionSets.length ? <div className="question-set-list">{savedQuestionSets.map((item) => <div className="question-set-card" key={item.id}><button type="button" onClick={() => loadQuestionSet(item)}><strong>{item.name}</strong><span>{item.focus} / {item.companyId ? "当前调研对象" : "所有调研对象"} / {item.status === "已冻结" ? "已定稿" : "编辑中"}</span></button><div className="inline-actions">{item.status === "草稿" ? <button className="text-button" type="button" onClick={() => freezeQuestionSet(item.id)}>定稿</button> : null}<button className="icon-button danger-outline" type="button" title="删除访谈提纲" onClick={() => deleteQuestionSet(item)}><X size={16} /></button></div></div>)}</div> : <div className="empty-stage">当前项目和调研对象还没有保存的访谈提纲。</div>}
+        </Panel>
+      </div>
     </div>
   );
 }
