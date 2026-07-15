@@ -1497,6 +1497,7 @@ function QuestionGenerator({ state, setState, selectedCompanyId, setSelectedComp
 function QuestionLibrary({ state, setState }: { state: AppState; setState: (state: AppState) => void }) {
   const [editingTemplate, setEditingTemplate] = useState<QuestionTemplate>(emptyTemplate());
   const [keyword, setKeyword] = useState("");
+  const [drawerOpen, setDrawerOpen] = useState(false);
   const templates = state.questionTemplates.filter((template) => [template.category, template.question, ...template.appliesToTypes, ...template.appliesToPositions].join(" ").toLowerCase().includes(keyword.toLowerCase()));
 
   function saveTemplate() {
@@ -1510,6 +1511,7 @@ function QuestionLibrary({ state, setState }: { state: AppState; setState: (stat
         : [...state.questionTemplates, template]
     });
     setEditingTemplate(emptyTemplate());
+    setDrawerOpen(false);
   }
 
   function deleteTemplate(template: QuestionTemplate) {
@@ -1519,25 +1521,37 @@ function QuestionLibrary({ state, setState }: { state: AppState; setState: (stat
   }
 
   return (
-    <div className="grid two">
-      <Panel title={editingTemplate.id ? "编辑问题" : "新增问题"}>
-        <div className="template-editor">
-          <div className="form-grid">
-            <Field label="问题分类" value={editingTemplate.category} onChange={(category) => setEditingTemplate({ ...editingTemplate, category })} />
-            <Field label="适用企业角色" value={editingTemplate.appliesToTypes.join("、")} onChange={(value) => setEditingTemplate({ ...editingTemplate, appliesToTypes: splitTags(value) })} />
-            <Field label="适用产业链环节" value={editingTemplate.appliesToPositions.join("、")} onChange={(value) => setEditingTemplate({ ...editingTemplate, appliesToPositions: splitTags(value) })} />
-          </div>
-          <label>问题内容<textarea value={editingTemplate.question} onChange={(event) => setEditingTemplate({ ...editingTemplate, question: event.target.value })} /></label>
-          <div className="inline-actions"><button className="button secondary" type="button" onClick={() => setEditingTemplate(emptyTemplate)}>新建问题</button><button className="button" type="button" onClick={saveTemplate}><CheckCircle2 size={16} /> 保存问题</button></div>
-        </div>
-      </Panel>
-      <Panel title="问题列表">
+    <div className="grid">
+      <Panel title="问题库" action={<button className="button" type="button" onClick={() => {
+        setEditingTemplate(emptyTemplate());
+        setDrawerOpen(true);
+      }}><Plus size={16} /> 新建问题</button>}>
         <div className="toolbar"><div className="search-box"><Search size={17} /><input value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索分类、问题或适用范围" /></div></div>
         <div className="template-list">
-          {templates.map((template) => <div className="template-row" key={template.id}><button className="template-main" type="button" onClick={() => setEditingTemplate(template)}><strong>{template.category}</strong><span>{template.question}</span><em>{[...template.appliesToTypes, ...template.appliesToPositions].join(" / ") || "通用"}</em></button><button className="icon-button danger-outline" type="button" title="删除问题" onClick={() => deleteTemplate(template)}><X size={16} /></button></div>)}
+          {templates.map((template) => <div className="template-row" key={template.id}><button className="template-main" type="button" onClick={() => {
+            setEditingTemplate(template);
+            setDrawerOpen(true);
+          }}><strong>{template.category}</strong><span>{template.question}</span><em>{[...template.appliesToTypes, ...template.appliesToPositions].join(" / ") || "通用"}</em></button><button className="icon-button danger-outline" type="button" title="删除问题" onClick={() => deleteTemplate(template)}><X size={16} /></button></div>)}
           {!templates.length ? <div className="empty-stage">没有匹配的问题。</div> : null}
         </div>
       </Panel>
+      {drawerOpen ? <div className="drawer-layer" onMouseDown={() => setDrawerOpen(false)}>
+        <aside className="drawer question-library-drawer" onMouseDown={(event) => event.stopPropagation()}>
+          <div className="drawer-head">
+            <div><h2>{editingTemplate.id ? "编辑问题" : "新增问题"}</h2><p>定义问题内容及其适用范围。</p></div>
+            <button className="icon-button" type="button" title="关闭" onClick={() => setDrawerOpen(false)}><X size={18} /></button>
+          </div>
+          <div className="drawer-content">
+            <div className="form-grid">
+              <Field label="问题分类" value={editingTemplate.category} onChange={(category) => setEditingTemplate({ ...editingTemplate, category })} />
+              <Field label="适用企业角色" value={editingTemplate.appliesToTypes.join("、")} onChange={(value) => setEditingTemplate({ ...editingTemplate, appliesToTypes: splitTags(value) })} />
+              <Field label="适用产业链环节" value={editingTemplate.appliesToPositions.join("、")} onChange={(value) => setEditingTemplate({ ...editingTemplate, appliesToPositions: splitTags(value) })} />
+            </div>
+            <label>问题内容<textarea value={editingTemplate.question} onChange={(event) => setEditingTemplate({ ...editingTemplate, question: event.target.value })} /></label>
+            <div className="drawer-actions-inline"><button className="button" type="button" onClick={saveTemplate}><CheckCircle2 size={16} /> 保存问题</button></div>
+          </div>
+        </aside>
+      </div> : null}
     </div>
   );
 }

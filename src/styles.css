@@ -2094,6 +2094,10 @@ label {
   width: min(680px, 100vw);
 }
 
+.question-library-drawer {
+  width: min(620px, 100vw);
+}
+
 .multiline-text {
   white-space: pre-wrap;
 }
