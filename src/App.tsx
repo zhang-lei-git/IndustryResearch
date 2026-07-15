@@ -1227,15 +1227,12 @@ function ResearchTasks({ mode, state, setState, onNavigate }: {
       </div>
     ) : (
       <div className="grid two">
-      <section className="object-task-selector">
-          <label>所属调研项目<select value={taskId} onChange={(event) => selectTask(event.target.value)}>
+      <Panel title="选择调研对象">
+        <div className="form-grid object-filter-form">
+          <label className="project-select-field">所属调研项目<select value={taskId} onChange={(event) => selectTask(event.target.value)}>
             <option value="">请选择调研项目</option>
             {workspaceTasks.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select></label>
-          {!task ? <span className="field-warning">请先在“调研项目”中创建或选择一个项目。</span> : null}
-      </section>
-      <Panel title="从企业库筛选并加入">
-        <div className="form-grid">
           <Field label="企业名称、行业或关键词" value={companyKeyword} onChange={setCompanyKeyword} />
           <label>企业类型<select value={companyType} onChange={(event) => setCompanyType(event.target.value)}><option value="">不限</option>{companyTypes.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
           <label>产业链位置<select value={chainPosition} onChange={(event) => setChainPosition(event.target.value)}><option value="">不限</option>{chainPositions.map((item) => <option key={item} value={item}>{item}</option>)}</select></label>
@@ -1244,6 +1241,7 @@ function ResearchTasks({ mode, state, setState, onNavigate }: {
             <option value="">不限</option><option>招投标</option><option>采购</option><option>新闻</option><option>扩产</option><option>招聘</option><option>认证</option>
           </select></label>
         </div>
+        {!task ? <p className="field-warning">请先在“调研项目”中创建或选择一个项目。</p> : null}
         <p className="muted-text">筛选只改变企业库结果，不会自动加入项目。选择“检验检测/试验验证”时，系统会匹配企业信息中含检验、检测、试验、强度或适航的企业。</p>
       </Panel>
 

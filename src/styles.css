@@ -1882,6 +1882,10 @@ label {
   right: 12px;
 }
 
+.object-filter-form .project-select-field {
+  grid-column: 1 / -1;
+}
+
 .add-object-button {
   color: var(--brand);
   border-color: #bfd3ff;
@@ -1891,17 +1895,6 @@ label {
   background: #f1f5f9;
   color: #94a3b8;
   border-color: #e2e8f0;
-}
-
-.object-task-selector {
-  display: grid;
-  align-self: start;
-  align-content: start;
-  gap: 8px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: #fbfdff;
-  padding: 14px;
 }
 
 .sample-row strong,
