@@ -1896,6 +1896,7 @@ label {
 
 .object-task-selector {
   display: grid;
+  align-self: start;
   align-content: start;
   gap: 8px;
   border: 1px solid var(--line);
